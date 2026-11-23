@@ -123,8 +123,24 @@ class CadenceSheet(Sheet):
         self.text(x, y + len(pins) * h + 10, part)
 
 
-def fpga_board(path: str):
-    s = Sheet()
+class GhostTextSheet(Sheet):
+    """Mimics SCH2PDF-style output: letters are drawn as line strokes (a crude stroke font) and
+    the real text is an invisible layer on top (text render mode 3)."""
+
+    def text(self, x: float, y: float, s: str, size: float = FS):
+        self.page.insert_text((x, y), s, fontsize=size, fontname="helv", render_mode=3)
+        w, h = 0.55 * size, 0.7 * size
+        cx = x
+        for ch in s:
+            if ch != " ":
+                for (a, b, c, d) in ((0, 0, 0, -h), (0, -h, w * 0.8, -h), (0, -h / 2, w * 0.6, -h / 2),
+                                     (0, 0, w * 0.8, 0)):
+                    self.page.draw_line((cx + a, y + b), (cx + c, y + d), width=0.3)
+            cx += w
+
+
+def fpga_board(path: str, cls=None):
+    s = (cls or Sheet)()
     s.symbol(500, 80, "U1", "XC7K325T-2FFG900C", bank="65", left=[
         ("AE12", "IO_L1P_T0_65", "SENS_SDA"),
         ("AF12", "IO_L1N_T0_65", "SENS_SCL"),
@@ -139,8 +155,8 @@ def fpga_board(path: str):
     s.save(path)
 
 
-def sensor_board(path: str):
-    s = Sheet()
+def sensor_board(path: str, cls=None):
+    s = (cls or Sheet)()
     # TMP117 -> TXS0102 level shifter (A side 3V3, B side 1V8) -> FMC mezzanine connector
     sensor = s.symbol(110, 80, "U5", "TMP117AIDRVR", right=[("6", "SDA", None), ("1", "SCL", None)],
                       left=[("3", "GND", "GND")], wire=25)

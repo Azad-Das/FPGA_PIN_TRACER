@@ -124,3 +124,20 @@ def test_diff_pair_termination_is_not_series():
     assert _diff_pair("LA01_P_CC", "LA01_N_CC")
     assert not _diff_pair("GPIO1", "GPIO2")
     assert not _diff_pair("PCLK", "NCLK")
+
+
+def test_ghost_text_boards(tmp_path):
+    """Letters drawn as strokes with an invisible text layer (SCH2PDF style)."""
+    fp, sp = tmp_path / "gf.pdf", tmp_path / "gs.pdf"
+    synth.fpga_board(str(fp), cls=synth.GhostTextSheet)
+    synth.sensor_board(str(sp), cls=synth.GhostTextSheet)
+    fpga = parse_pdf(str(fp), name="FPGA")
+    sensor = parse_pdf(str(sp), name="SENSOR")
+    assert fpga.components["U1"].pins["AE12"].net == "SENS_SDA"
+    d = Design()
+    d.add_board(fpga)
+    d.add_board(sensor)
+    d.mates.append(Mate("FPGA", "J1", "SENSOR", "J2"))
+    res = {r.start.pin_name: r for r in d.trace_component("SENSOR", "U5")}
+    assert res["SDA"].end.pin == "AE12"
+    assert res["SCL"].end.pin == "AF12"

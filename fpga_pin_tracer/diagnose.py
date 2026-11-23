@@ -93,6 +93,9 @@ def diagnose(path: str, out=sys.stdout) -> None:
         w("  EDA aracında PDF dışa aktarırken metni metin olarak bırakın (TrueType/gömülü font).")
     elif tot["chars"] == 0:
         w("  PDF'te okunabilir metin yok. Vektör, metinli bir PDF gerekir.")
+    elif tot["hidden"] > 0.95 * tot["chars"]:
+        w("  Metnin tamamı görünmez katmanda; harfler çizgiyle çizilmiş (ör. SCH2PDF). Uygulama bu")
+        w("  durumda görünmez katmanı metin olarak kullanır ve harf çizgilerini atar.")
     elif tot["bad"] > 0.3 * tot["chars"]:
         w("  Metin var ama karakterlerin çoğu çözülemiyor (font Unicode eşlemesi yok, çoğunlukla Type3).")
         w("  Farklı font ayarıyla yeniden dışa aktarmak gerekir.")
@@ -101,7 +104,24 @@ def diagnose(path: str, out=sys.stdout) -> None:
     elif tot["rects"] == 0:
         w("  Metin ve teller var ama sembol gövdesi (dikdörtgen) bulunamadı; çizim tarzı tanınmıyor.")
     else:
-        w("  Temel yapı okunuyor. Sorun ayrıştırma ayrıntısında; bu çıktıyı geliştiriciye iletin.")
+        w("  Temel yapı okunuyor.")
+    # parse summary: counts and roles only, no names
+    try:
+        from collections import Counter as _C
+
+        from .parser import parse_pdf
+        from .roles import annotate
+        b = parse_pdf(path)
+        annotate(b)
+        roles = _C(c.role for c in b.components.values())
+        pins = sum(len(c.pins) for c in b.components.values())
+        named = sum(1 for c in b.components.values() for p in c.pins.values() if not p.net.startswith("N$"))
+        big = sorted((len(c.pins) for c in b.components.values() if c.role == "fpga"), reverse=True)
+        w(f"ÇÖZÜMLEME: {len(b.components)} bileşen, {pins} pin ({named} pin etiketli nette), {len(b.nets)} net")
+        w("  roller: " + ", ".join(f"{k}={v}" for k, v in sorted(roles.items())) +
+          (f"   FPGA pin sayısı: {big}" if big else "   FPGA bulunamadı"))
+    except Exception as e:  # noqa: BLE001
+        w(f"ÇÖZÜMLEME HATASI: {type(e).__name__}: {e}")
 
 
 def main(argv: list[str] | None = None) -> int:

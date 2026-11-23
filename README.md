@@ -125,6 +125,9 @@ PDF'i üreten aracın adından oluşur; net adı, parça numarası gibi şema i�
 gizli şemalarda da paylaşılabilir. Sık nedenler: taranmış (resim) PDF, eğriye çevrilmiş yazılar,
 Unicode eşlemesi olmayan fontlar.
 
+Harflerin çizgiyle çizildiği, gerçek metnin görünmez bir katmanda durduğu PDF'ler (ör. SCH2PDF
+çıktısı) desteklenir: görünmez katman metin olarak kullanılır, harf çizgileri tel sayılmaz.
+
 ## Bilinen sınırlamalar
 
 - Taranmış (resim) PDF'ler desteklenmez. PDF'te vektör metin ve çizgi olmalı. Altium, OrCAD,

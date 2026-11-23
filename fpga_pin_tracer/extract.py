@@ -95,6 +95,7 @@ class PagePrims:
     graphics: list[Box]         # bboxes of symbol drawings (zigzags, arrows, curves)
     text_size: float            # median visible text size, drives all tolerances
     cadence: bool = False       # Cadence/Allegro drawing style detected on this page
+    ghost_text: bool = False    # letters drawn as strokes, real text in an invisible layer
 
 
 def _norm(x0, y0, x1, y1):
@@ -299,6 +300,33 @@ def extract_page(page: pymupdf.Page) -> PagePrims:
                 uniq_segs.append(s)
         segs = uniq_segs
 
+    # "Ghost text" (e.g. SCH2PDF): every letter is drawn with vector strokes and the real text sits
+    # on top as an invisible search layer. Use that layer as the visible text and drop the glyph
+    # strokes, which would otherwise pass for wires and symbol graphics.
+    visible_n = sum(len(t.text) for t in texts if not t.hidden)
+    hidden_n = sum(len(t.text) for t in texts if t.hidden)
+    ghost = hidden_n > 50 and visible_n < 0.05 * hidden_n
+    if ghost:
+        for t in texts:
+            t.hidden = False
+        cell = 20.0
+        boxes: dict[tuple[int, int], list[Text]] = {}
+        for t in texts:
+            for gx in range(int(t.x0 // cell), int(t.x1 // cell) + 1):
+                for gy in range(int(t.y0 // cell), int(t.y1 // cell) + 1):
+                    boxes.setdefault((gx, gy), []).append(t)
+
+        def in_text(x0, y0, x1, y1) -> bool:
+            pad = 0.6
+            for t in boxes.get((int(x0 // cell), int(y0 // cell)), ()):
+                if t.x0 - pad <= x0 and x1 <= t.x1 + pad and t.y0 - pad <= y0 and y1 <= t.y1 + pad:
+                    return True
+            return False
+
+        segs = [s for s in segs if not in_text(s.x0, s.y0, s.x1, s.y1)]
+        graphics = [g for g in graphics if not in_text(g.x0, g.y0, g.x1, g.y1)]
+        rects = [r for r in rects if not in_text(r.x0, r.y0, r.x1, r.y1)]
+
     seg_boxes, edge_idx = _rects_from_segs(segs) if cadence else ([], set())
     if seg_boxes:
         rects.extend(seg_boxes)
@@ -309,7 +337,7 @@ def extract_page(page: pymupdf.Page) -> PagePrims:
     for i, s in enumerate(segs):
         s.idx = i
     return PagePrims(page.number + 1, page.rect.width, page.rect.height, texts, segs, rects,
-                     graphics, text_size, cadence)
+                     graphics, text_size, cadence, ghost)
 
 
 def extract_pdf(path: str) -> list[PagePrims]:
