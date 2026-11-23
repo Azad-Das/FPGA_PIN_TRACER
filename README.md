@@ -3,7 +3,7 @@
 PCB şematik PDF'lerinden FPGA'ya giden bağlantıları çıkaran masaüstü uygulaması.
 
 Bir veya daha fazla şematik PDF'i verirsiniz; uygulama her çevre birimi (sensör, ADC, DAC,
-Ethernet PHY, SPI/I2C/UART cihazı, konektör…) için hangi pininin FPGA'nın hangi ball'una ve
+Ethernet PHY, SPI/I2C/UART cihazı, konektör…) için hangi pininin FPGA'nın hangi pinine ve
 bankasına gittiğini, aradaki seri direnç, seviye çevirici ve kartlar arası konektörlerle
 birlikte gösterir.
 
@@ -13,7 +13,7 @@ SENSOR / U5 (TMP117) / SCL
    ↳ U7 (TXS0102) A2→B2
    ↳ SENSOR/J2.H8 ⇄ BACKPLANE/J10.H8
    ↳ BACKPLANE/J11.H8 ⇄ FPGA/J1.H8
-   →  FPGA / U1 ball AF12 [IO_L1N_T0_65], Bank 65 (VCC1V8)
+   →  FPGA / U1 pin AF12 [IO_L1N_T0_65], Bank 65 (VCC1V8)
 ```
 
 ## Çalıştırma
@@ -83,7 +83,7 @@ gibi FPGA izlemeyi etkilemeyen parçalar.
 
 Cadence çıktısı olarak Analog Devices ADS10 (Virtex UltraScale+ FPGA kartı) ile AD9084
 "Apollo" değerlendirme kartı birlikte denendi: FMC+ konnektörleri otomatik eşleşti (puan 0.87),
-AD9084'ün 112 sinyal pini FPGA ball ve bankasına kadar izlendi (SerDes hatları, HSCI, SPI, GPIO;
+AD9084'ün 112 sinyal pini FPGA pini ve bankasına kadar izlendi (SerDes hatları, HSCI, SPI, GPIO;
 aradaki seri direnç, kuplaj kondansatörü ve FXLA104 seviye çeviricileriyle birlikte).
 
 ## Kartlar arası konektör eşleştirme nasıl yapılır?
@@ -112,7 +112,7 @@ puan 0.88. Gerekçeler: eş parça numaraları, 88/88 sinyal adı eşleşmesi, 7
 ## Çıktı formatları
 
 - **CSV**: `source_board, source_ref, source_part, source_pin, source_pin_name, source_net,
-  fpga_board, fpga_ref, fpga_ball, fpga_pin_name, fpga_bank, bank_voltage, fpga_net, hop_count, path`.
+  fpga_board, fpga_ref, fpga_pin, fpga_pin_name, fpga_bank, bank_voltage, fpga_net, hop_count, path`.
   Excel'de Türkçe karakterler için UTF-8 BOM ile yazılır.
 - **TXT**: insan okunur, bileşen başlıkları altında pin listesi ve ara katmanlar.
 - **Uygulama içi tablo**: filtrelenebilir, sıralanabilir, ara katmanlar açılır kapanır.

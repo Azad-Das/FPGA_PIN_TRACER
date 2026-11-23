@@ -9,7 +9,7 @@ from .model import TraceResult
 
 CSV_COLUMNS = [
     "source_board", "source_ref", "source_part", "source_pin", "source_pin_name", "source_net",
-    "fpga_board", "fpga_ref", "fpga_ball", "fpga_pin_name", "fpga_bank", "bank_voltage", "fpga_net",
+    "fpga_board", "fpga_ref", "fpga_pin", "fpga_pin_name", "fpga_bank", "bank_voltage", "fpga_net",
     "hop_count", "path",
 ]
 
@@ -52,7 +52,7 @@ def to_txt(results: list[TraceResult], include_path: bool = True) -> str:
             continue
         bank = f", Bank {r.bank}" if r.bank else ""
         volt = f" ({r.bank_voltage})" if r.bank_voltage else ""
-        dst = f"{e.board} / {e.refdes} ball {e.pin} [{e.pin_name}]{bank}{volt}"
+        dst = f"{e.board} / {e.refdes} pin {e.pin} [{e.pin_name}]{bank}{volt}"
         lines.append(f"  {src}  →  {dst}")
         if include_path:
             for h in r.hops:

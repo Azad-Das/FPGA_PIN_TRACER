@@ -22,7 +22,7 @@ from .model import Mate, TraceResult
 from .parser import parse_pdf
 from .trace import Design
 
-COLUMNS = ["Kart", "Bileşen", "Parça", "Pin", "Pin adı", "Net", "FPGA kartı", "FPGA", "Ball",
+COLUMNS = ["Kart", "Bileşen", "Parça", "Pin", "Pin adı", "Net", "FPGA kartı", "FPGA", "Pin",
            "FPGA pin adı", "Bank", "Bank gerilimi", "Ara katman"]
 ROLE_LABELS = {"other": "Cihaz", "connector": "Konektör", "buffer": "Buffer / çevirici"}
 AUTO_MATE_SCORE = 0.6
@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         rl = QVBoxLayout(right)
         orow = QHBoxLayout()
         self.result_filter = QLineEdit()
-        self.result_filter.setPlaceholderText("Tabloda filtrele: pin, net, ball, bank…")
+        self.result_filter.setPlaceholderText("Tabloda filtrele: pin, net, bank…")
         self.show_hops = QCheckBox("Ara katmanları göster")
         self.show_hops.toggled.connect(self.apply_expand)
         self.show_unconnected = QCheckBox("FPGA'ya ulaşmayan pinleri de göster")
