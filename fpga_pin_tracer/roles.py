@@ -7,7 +7,7 @@ import re
 from .model import Board, Component
 
 FPGA_PART_RE = re.compile(
-    r"^(XC|XQ|XA|XCZU|XCKU|XCVU|XCAU|XCVC|XCVM|XCVE)\d|"      # AMD/Xilinx
+    r"^(XC|XQ|XA)[A-Z]{0,3}\d|"     # AMD/Xilinx: XC7K, XCZU, XCKU, XCVU, XCVP (Versal Premium), XQ...
     r"^(10M|10CL|10AX|10AS|5CE|5CG|5CS|5SG|EP4C|EP3C|EP2C|EP4S|AGF|AGI|1S[GXM]|A5E)|"   # Intel/Altera
     r"^(LFE|LCMXO|LFCPNX|LIFCL|ICE40|ICE5)|"                   # Lattice
     r"^(M2S|M2GL|MPF|A3P|AGL|RT4G)|^GW\dA",                     # Microchip, Gowin
@@ -35,7 +35,7 @@ SUPPLY_PIN_RE = re.compile(r"^[A-Z]{0,3}V(CC|DD|SS|EE)\w*$|^(A|D|P)?GND\w*$|^V(R
                            r"^(VCCO|VCCAUX|VCCINT|VCCBRAM|VCCPINT|VCCPAUX|VCCPLL|VCCADC|VREFP|VREFN|"
                            r"GNDADC|MGTAVCC|MGTAVTT|MGTVCCAUX)\w*$", re.I)
 PASSIVE_REF_RE = re.compile(r"^(R|RN|FB|L|C|D|F|Y|X|TP|JP)\d+[A-Z]?$")
-CONNECTOR_REF_RE = re.compile(r"^(J|P|CN|CON|XS|XP|X|JA|JB|JC|JD|JE)\d+[A-Z]?$")
+CONNECTOR_REF_RE = re.compile(r"^(J|P|CN|CON|KN|XS|XP|X|JA|JB|JC|JD|JE)\d+[A-Z]?$")   # KN: konnektör
 
 XILINX_BANK_FROM_NAME = re.compile(r"_(\d{2,3})$")
 VCCO_RE = re.compile(r"^VCCO_?(\d{1,3}[A-Z]?)$", re.I)

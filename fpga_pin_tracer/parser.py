@@ -24,7 +24,7 @@ from .extract import Box, PagePrims, Seg, Text, extract_pdf
 from .model import Board, Component, Pin
 
 REFDES_RE = re.compile(r"^(?:[A-Z]{1,4})\d{1,4}[A-Z]?$")
-COMMON_PREFIX_RE = re.compile(r"^(U|IC|J|P|CN|CON|X|XU|Q|R|RN|C|L|D|FB|SW|S|T|K|Y|JP|TP|LD|LED|BT|F|"
+COMMON_PREFIX_RE = re.compile(r"^(U|IC|TD|J|P|CN|CON|KN|X|XU|Q|R|RN|C|L|D|FB|SW|S|T|K|Y|JP|TP|LD|LED|BT|F|"
                               r"BTN|M|MOD|PS|VR|DS|H|XP|XS|JA|JB|JC|JD|JE)\d{1,4}[A-Z]?$")
 PASSIVE_RE = re.compile(r"^(R|RN|C|L|FB|D|F|JP|TP|Y|X)\d{1,4}[A-Z]?$")
 PIN_NUM_RE = re.compile(r"^(?:[A-Z]{0,3}\d{1,3}[A-Z]?|[A-Z]{1,2})$")
@@ -324,20 +324,30 @@ class PageParser:
                     continue
                 if best is None or score < best[0]:
                     best = (score, si)
-            if best is None and self.pp.cadence and t.horizontal:
-                # port-style label: text beside a free wire end, on the wire's line, with a gap
-                for si in grid.near(t.x0 - 3 * ts, t.y0 - ts, t.x1 + 3 * ts, t.y1 + ts):
+            if best is None and t.horizontal:
+                # port-style label: text beside a free wire end, on the wire's line, with a gap.
+                # Cadence leaves the gap empty; other tools put an off-page flag (<<, >>) in it,
+                # so outside Cadence pages a flag graphic must sit in the gap.
+                reach = 3 * ts if self.pp.cadence else 5 * ts
+                for si in grid.near(t.x0 - reach, t.y0 - ts, t.x1 + reach, t.y1 + ts):
                     if si in exclude:
                         continue
                     s = segs[si]
                     if not s.horizontal or abs(t.cy - s.y0) > 0.6 * ts:
                         continue
-                    if t.x1 - 0.3 * ts <= s.x0 <= t.x1 + 3 * ts:
+                    if t.x1 - 0.3 * ts <= s.x0 <= t.x1 + reach:
                         gap, end = s.x0 - t.x1, (s.x0, s.y0)
-                    elif t.x0 - 3 * ts <= s.x1 <= t.x0 + 0.3 * ts:
+                        lo, hi = t.x1, s.x0
+                    elif t.x0 - reach <= s.x1 <= t.x0 + 0.3 * ts:
                         gap, end = t.x0 - s.x1, (s.x1, s.y1)
+                        lo, hi = s.x1, t.x0
                     else:
                         continue
+                    if not self.pp.cadence and not any(
+                            g.x1 >= lo - self.tol and g.x0 <= hi + self.tol and g.y0 <= s.y0 + 0.6 * ts
+                            and g.y1 >= s.y0 - 0.6 * ts and g.w <= 4 * ts and g.h <= 2 * ts
+                            for g in graphics):
+                        continue    # no flag between wire end and text
                     if any(oi != si and _on_segment(end[0], end[1], segs[oi], self.tol)
                            for oi in grid.near(end[0] - 1, end[1] - 1, end[0] + 1, end[1] + 1)):
                         continue    # not a free end

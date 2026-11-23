@@ -24,9 +24,15 @@ class Sheet:
     def rect(self, x0, y0, x1, y1):
         self.page.draw_rect(pymupdf.Rect(x0, y0, x1, y1), width=0.8)
 
+    def flag(self, x: float, y: float, direction: int):
+        """Off-page connector "<<" / ">>" starting at wire end (x, y), pointing away (+1 right)."""
+        for k in (0, 4):
+            x0 = x + direction * k
+            self.page.draw_polyline([(x0, y - 3), (x0 + direction * 4, y), (x0, y + 3)], width=0.4)
+
 
     def symbol(self, x: float, y: float, ref: str, part: str, left=(), right=(), bank: str | None = None,
-               width: float = 90, wire: float = 70):
+               width: float = 90, wire: float = 70, flags: bool = False):
         """Body at (x, y). left/right: [(pin number, pin name, net label or None)].
 
         Pins with a net label get a wire ending in that label; returns {pin number: wire end point}.
@@ -47,7 +53,11 @@ class Sheet:
                     self.line(x_out, py, x, py)
                     self.text(x - STUB + 2, py - 1.5, num)
                     self.text(x + 3, py + 2.5, name)
-                    if net:
+                    if net and flags:   # off-page flag "<<" at the wire end, name beyond it
+                        self.line(x_out - wire, py, x_out, py)
+                        self.flag(x_out - wire, py, -1)
+                        self.text(x_out - wire - 12 - 3.9 * len(net), py + 2.5, net)
+                    elif net:
                         self.line(x_out - wire, py, x_out, py)
                         self.text(x_out - wire + 3, py - 1.5, net)
                     ends[num] = (x_out, py)
@@ -56,7 +66,11 @@ class Sheet:
                     self.line(x + width, py, x_out, py)
                     self.text(x + width + 2, py - 1.5, num)
                     self.text(x + width - 3 - 3.6 * len(name), py + 2.5, name)
-                    if net:
+                    if net and flags:
+                        self.line(x_out, py, x_out + wire, py)
+                        self.flag(x_out + wire, py, 1)
+                        self.text(x_out + wire + 12, py + 2.5, net)
+                    elif net:
                         self.line(x_out, py, x_out + wire, py)
                         self.text(x_out + 5, py - 1.5, net)
                     ends[num] = (x_out, py)
@@ -196,4 +210,30 @@ def backplane(path: str):
                                                     ("H1", "GND", "GND")])
     s.symbol(520, 80, "J11", "ASP-134488-01", left=[("H7", "LA02_P", "BP_SDA"), ("H8", "LA02_N", "BP_SCL"),
                                                    ("H1", "GND", "GND")])
+    s.save(path)
+
+
+def ghost_fpga_board(path: str):
+    """SCH2PDF-like FPGA card: stroke letters, invisible text, off-page flags, TD/KN refdes."""
+    s = GhostTextSheet()
+    s.symbol(520, 80, "TD10", "XCVP1502-1MLIVSVA2785", flags=True, left=[
+        ("AE12", "IO_L1P_XCC_N0P0_M0P0_700", "FMCP1_LA02_P"),
+        ("AF12", "IO_L1N_XCC_N0P1_M0P1_700", "FMCP1_LA02_N"),
+        ("AC9", "VCCO_700", "VCCO_1V5"),
+    ])
+    s.symbol(150, 80, "KN5", "ASP-184329-01", flags=True, right=[
+        ("H7", "LA02_P", "FMCP1_LA02_P"),
+        ("H8", "LA02_N", "FMCP1_LA02_N"),
+        ("H1", "GND", "GND"),
+    ])
+    s.save(path)
+
+
+def ghost_adc_board(path: str):
+    s = GhostTextSheet()
+    s.symbol(150, 80, "TD3", "AD9084BBPZ", flags=True, right=[
+        ("C21", "GPIO_17", "APOLLO_GPIO17_FMC"), ("D21", "GPIO_18", "APOLLO_GPIO18_FMC")])
+    s.symbol(520, 80, "KN1", "MJ-0000-39366", flags=True, left=[
+        ("H7", "LA02_P", "APOLLO_GPIO17_FMC"), ("H8", "LA02_N", "APOLLO_GPIO18_FMC"),
+        ("H1", "GND", "GND")])
     s.save(path)

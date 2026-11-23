@@ -51,6 +51,38 @@ def _page_report(page: pymupdf.Page) -> dict:
     return r
 
 
+def _fpga_report(b, w) -> None:
+    """Counts about the FPGA(s) and the largest parts; refdes and part numbers only, no nets."""
+    import re
+
+    from .roles import is_power_net, is_signal_pin
+    big = sorted(b.components.values(), key=lambda c: -len(c.pins))[:6]
+    w("  en büyük bileşenler (ref, rol, parça, pin, sayfa):")
+    for c in big:
+        w(f"    {c.refdes:<8} {c.role:<9} {(c.part or '-')[:24]:<24} {len(c.pins):>5} pin  {len(c.pages)} sayfa")
+    for c in b.components.values():
+        if c.role != "fpga":
+            continue
+        pins = list(c.pins.values())
+        io = sum(1 for p in pins if re.match(r"^(IO|PS_MIO|MIO|PL_|HP_|HD_)", p.name or ""))
+        banked = sum(1 for p in pins if p.bank)
+        sig = [n for n, p in c.pins.items() if is_signal_pin(b, c, n)]
+        anon = sum(1 for n in sig if c.pins[n].net.startswith("N$"))
+        shared = 0
+        to_other = 0
+        for n in sig:
+            members = [m for m in b.nets.get(c.pins[n].net, []) if m != (c.refdes, n)]
+            if members:
+                shared += 1
+            if any(b.components[r].role != "fpga" for r, _ in members if r in b.components):
+                to_other += 1
+        power = sum(1 for p in pins if is_power_net(b, p.net))
+        w(f"  FPGA {c.refdes}: {len(pins)} pin, adı olan {sum(1 for p in pins if p.name)}, IO adlı {io}, "
+          f"bankası bulunan {banked}, güç/toprak {power}")
+        w(f"    sinyal pini {len(sig)}: etiketsiz nette {anon}, başka pinle ortak nette {shared}, "
+          f"FPGA dışı bir bileşene giden {to_other}")
+
+
 def diagnose(path: str, out=sys.stdout) -> None:
     w = lambda s="": print(s, file=out)  # noqa: E731
     try:
@@ -120,6 +152,9 @@ def diagnose(path: str, out=sys.stdout) -> None:
         w(f"ÇÖZÜMLEME: {len(b.components)} bileşen, {pins} pin ({named} pin etiketli nette), {len(b.nets)} net")
         w("  roller: " + ", ".join(f"{k}={v}" for k, v in sorted(roles.items())) +
           (f"   FPGA pin sayısı: {big}" if big else "   FPGA bulunamadı"))
+        single = sum(1 for m in b.nets.values() if len(m) == 1)
+        w(f"  tek pinli net: {single}/{len(b.nets)} (çoksa teller pinlere bağlanamıyor demektir)")
+        _fpga_report(b, w)
     except Exception as e:  # noqa: BLE001
         w(f"ÇÖZÜMLEME HATASI: {type(e).__name__}: {e}")
 

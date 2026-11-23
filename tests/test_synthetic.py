@@ -141,3 +141,23 @@ def test_ghost_text_boards(tmp_path):
     res = {r.start.pin_name: r for r in d.trace_component("SENSOR", "U5")}
     assert res["SDA"].end.pin == "AE12"
     assert res["SCL"].end.pin == "AF12"
+
+
+def test_ghost_text_with_offpage_flags(tmp_path):
+    """Labels behind off-page flags, KN connectors, TD-prefixed ICs, auto-mated by pin match."""
+    fp, ap = tmp_path / "kd.pdf", tmp_path / "ad.pdf"
+    synth.ghost_fpga_board(str(fp))
+    synth.ghost_adc_board(str(ap))
+    kd, ad = parse_pdf(str(fp), name="KD"), parse_pdf(str(ap), name="AD")
+    d = Design()
+    d.add_board(kd)
+    d.add_board(ad)
+    assert kd.components["TD10"].role == "fpga"
+    assert kd.components["KN5"].role == "connector" and ad.components["KN1"].role == "connector"
+    assert kd.components["TD10"].pins["AE12"].net == "FMCP1_LA02_P"
+    mates = [s.mate for s in suggest_mates(d.boards)]
+    assert {(m.ref_a, m.ref_b) for m in mates} & {("KN5", "KN1"), ("KN1", "KN5")}
+    d.mates += mates
+    res = {r.start.pin_name: r for r in d.trace_component("AD", "TD3")}
+    assert res["GPIO_17"].end.pin == "AE12"
+    assert res["GPIO_18"].end.pin == "AF12"
