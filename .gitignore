@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+
+# Test schematics (copyrighted vendor PDFs, kept local only)
+samples/
+*.pdf
+
+# Outputs
+out/
+*.csv
+!tests/fixtures/*.csv
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
