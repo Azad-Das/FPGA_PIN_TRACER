@@ -97,3 +97,30 @@ def test_peripheral_list(boards):
 def test_norm_signal():
     assert norm_signal("FMC-LA01_CC_P") == norm_signal("LA01_P_CC".replace("_P_CC", "_CC_P")) == "LA01_P"
     assert norm_signal("FMC_LA06_N") == norm_signal("LA06_N")
+
+
+def test_cadence_style_board(tmp_path):
+    """Loose-stroke bodies, doubled 'm l h S' strokes, pin-cell connector, port-style labels."""
+    p = tmp_path / "cad.pdf"
+    synth.cadence_fpga_board(str(p))
+    b = parse_pdf(str(p), name="CAD")
+    annotate(b)
+    u1, p1 = b.components["U1"], b.components["P1"]
+    assert u1.role == "fpga" and p1.role == "connector"
+    assert len(u1.pins) == 3                      # no twin pins from doubled strokes
+    assert u1.pins["A9"].name == "IO_L24P_T3U_N10_70"
+    assert u1.pins["A9"].net == "FMC_LA11_P"
+    assert p1.pins["H2"].net == "FMC_LA11_P" and p1.pins["H3"].net == "FMC_LA11_N"
+    d = Design()
+    d.add_board(b)
+    res = {r.start.pin: r for r in d.trace_component("CAD", "P1")}
+    assert res["H2"].end.pin == "A9" and res["H2"].bank == "70"
+    assert res["H3"].end.pin == "A8"
+
+
+def test_diff_pair_termination_is_not_series():
+    from fpga_pin_tracer.roles import _diff_pair
+    assert _diff_pair("HSCI_CKIN_P", "HSCI_CKIN_N")
+    assert _diff_pair("LA01_P_CC", "LA01_N_CC")
+    assert not _diff_pair("GPIO1", "GPIO2")
+    assert not _diff_pair("PCLK", "NCLK")

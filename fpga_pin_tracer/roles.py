@@ -129,6 +129,24 @@ def _buffer_partner_names(name: str) -> list[str]:
     return out
 
 
+def _diff_pair(a: str, b: str) -> bool:
+    """HSCI_CKIN_P / HSCI_CKIN_N, LA01_P_CC / LA01_N_CC, CLK+ / CLK-: same name except polarity."""
+    if not a or not b or a == b:
+        return False
+    for p, n in (("P", "N"), ("POS", "NEG"), ("PLUS", "MINUS"), ("+", "-")):
+        for x, y in ((a, b), (b, a)):
+            for i in range(len(x) - len(p) + 1):
+                if x[i:i + len(p)].upper() != p:
+                    continue
+                before = x[i - 1] if i else ""
+                after = x[i + len(p)] if i + len(p) < len(x) else ""
+                if (before.isalpha() and p.isalpha()) or (after.isalpha() and p.isalpha()):
+                    continue
+                if (x[:i] + n + x[i + len(p):]).upper() == y.upper():
+                    return True
+    return False
+
+
 def pass_through(board: Board, comp: Component, pin_no: str) -> list[tuple[str, str]]:
     """Pins of `comp` a signal entering at `pin_no` continues to, with a short note for each."""
     pin = comp.pins.get(pin_no)
@@ -142,7 +160,9 @@ def pass_through(board: Board, comp: Component, pin_no: str) -> list[tuple[str, 
         other = next(p for n, p in comp.pins.items() if n != pin_no)
         if is_power_net(board, other.net) or is_power_net(board, pin.net):
             return []
-        kind = {"R": "seri direnç", "F": "ferrit", "L": "bobin", "C": "kuplaj kondansatörü"}.get(comp.refdes[0], "pasif")
+        if _diff_pair(pin.net, other.net):
+            return []       # termination resistor across a P/N pair, not in series
+        kind ={"R": "seri direnç", "F": "ferrit", "L": "bobin", "C": "kuplaj kondansatörü"}.get(comp.refdes[0], "pasif")
         val = f" {comp.part}" if comp.part else ""
         return [(other.number, f"{comp.refdes} ({kind}{val})")]
     if comp.role == "buffer":

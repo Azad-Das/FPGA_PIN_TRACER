@@ -20,8 +20,8 @@ from .model import Board, Mate
 from .roles import GROUND_PIN_RE, is_power_net
 
 # Samtec FMC: carrier (on the FPGA board) <-> mezzanine (on the plug-in card)
-FMC_CARRIER = ("ASP-134486", "ASP-134603", "ASP-186082")   # HPC, LPC, FMC+ HSPC
-FMC_MEZZ = ("ASP-134488", "ASP-134602", "ASP-186083")
+FMC_CARRIER = ("ASP-134486", "ASP-134603", "ASP-186082", "ASP-184329")   # HPC, LPC, FMC+ HSPC
+FMC_MEZZ = ("ASP-134488", "ASP-134602", "ASP-186083", "ASP-188588", "ASP-184330")
 KNOWN_FAMILIES = [
     ("FMC", FMC_CARRIER, FMC_MEZZ),
     ("VPX", ("MULTIGIG", "1410187", "1410140", "VPX"), ("MULTIGIG", "1410186", "1410142", "VPX")),

@@ -30,6 +30,7 @@ PASSIVE_RE = re.compile(r"^(R|RN|C|L|FB|D|F|JP|TP|Y|X)\d{1,4}[A-Z]?$")
 PIN_NUM_RE = re.compile(r"^(?:[A-Z]{0,3}\d{1,3}[A-Z]?|[A-Z]{1,2})$")
 NET_RE = re.compile(r"^[A-Za-z0-9_+\-./\\#~\[\]!()]{2,64}$")
 NC_RE = re.compile(r"^(NC|N\.C\.?|N/C|NO_?CONNECT|DNC|DNP|OPEN)$", re.I)
+PART_LIKE_RE = re.compile(r"^[A-Z]{2,6}-?\d{3,}[A-Z0-9#\-/.,()+_]*$")
 BANK_RE = re.compile(r"\bBANK\s*_?(\d{1,3}[A-Z]?)\b", re.I)
 # component values that must never be read as net labels: 150uF, 0.1uF, 10K, 4K7, 100, 1nF, 600R
 ANON = "⁣"   # invisible separator: prefix of page-local wire-group keys (never in a label)
@@ -115,6 +116,8 @@ class PageParser:
             if r.w * r.h > 0.25 * page_area:
                 continue
             bodies.append(r)
+        if pp.cadence:
+            bodies.extend(self._pill_columns())
         # drop exact duplicates (fill + stroke drawn separately)
         uniq: list[Box] = []
         for b in bodies:
@@ -122,6 +125,62 @@ class PageParser:
                        and abs(b.y1 - u.y1) < 0.5 for u in uniq):
                 uniq.append(b)
         return uniq
+
+    def _pill_columns(self) -> list[Box]:
+        """Connector symbols drawn as a stack of rounded pin cells with the number inside.
+
+        Cadence connector symbols (FMC, VPX) have no body rectangle: every pin is a small "pill"
+        made of a left arc, a right arc and two short horizontal lines. A vertical run of left
+        arcs paired with a run of right arcs at the same height, with pin numbers between them,
+        is treated as one body so the usual edge-pin logic applies.
+        """
+        ts, tol = self.ts, self.tol
+        arcs = [g for g in self.pp.graphics if g.w <= 1.0 * ts and 0.6 * ts <= g.h <= 2.5 * ts]
+        cols: dict[tuple[int, int], list[Box]] = defaultdict(list)
+        for g in arcs:
+            cols[(round(g.x0), round(g.x1))].append(g)
+        runs: list[tuple[float, float, float, float, list[Box]]] = []   # x0, x1, ytop, ybot, cells
+        for gs in cols.values():
+            gs.sort(key=lambda g: g.y0)
+            cur = [gs[0]]
+            for g in gs[1:]:
+                if g.y0 - cur[-1].y1 <= tol:
+                    if g.y0 >= cur[-1].y1 - tol:
+                        cur.append(g)
+                    continue    # overlapping duplicate
+                runs.append((min(c.x0 for c in cur), max(c.x1 for c in cur), cur[0].y0, cur[-1].y1, cur))
+                cur = [g]
+            runs.append((min(c.x0 for c in cur), max(c.x1 for c in cur), cur[0].y0, cur[-1].y1, cur))
+        out: list[Box] = []
+        used: set[int] = set()
+        for i, (lx0, lx1, ly0, ly1, cells) in enumerate(runs):
+            if i in used:
+                continue
+            best = None
+            for j, (rx0, rx1, ry0, ry1, _) in enumerate(runs):
+                if j == i or j in used or rx0 <= lx1:
+                    continue
+                if abs(ry0 - ly0) > 2 * tol or abs(ry1 - ly1) > 2 * tol:
+                    continue
+                w = rx1 - lx0
+                if not (1.5 * ts <= w <= 8 * ts):
+                    continue
+                if best is None or rx0 < runs[best][0]:
+                    best = j
+            if best is None:
+                continue
+            rx1 = runs[best][1]
+            box = Box(lx0, min(ly0, runs[best][2]), rx1, max(ly1, runs[best][3]))
+            numbered = 0
+            for c in cells:
+                if any(lx1 <= t.cx <= runs[best][0] and c.y0 <= t.cy <= c.y1 and PIN_NUM_RE.match(t.text)
+                       for t in self.visible):
+                    numbered += 1
+            if numbered < max(1, len(cells) // 2):
+                continue
+            used.update((i, best))
+            out.append(box)
+        return out
 
     # ---------------------------------------------------------------- pins
     def find_pins(self, bodies: list[Box], grid: Grid) -> list[_PinRec]:
@@ -173,7 +232,14 @@ class PageParser:
                     below = s.y0 - 0.3 * ts <= t.y0 <= s.y0 + 0.6 * ts
                     if not (above or below) or not PIN_NUM_RE.match(t.text):
                         continue
-                    num_cands.append((abs(t.cy - s.y0) + 0.2 * abs(t.cx - (s.x0 + s.x1) / 2), pi, t))
+                    # Measure from the glyphs, not the bbox (which includes ascender/descender
+                    # space): baseline-to-line when above, cap-top-to-line when below. Numbers
+                    # printed above the pin line are the common convention, so "below" pays a
+                    # small penalty - with tight pin pitch a number sits between two lines.
+                    d_above = abs(s.y0 - t.oy) if above else 1e9
+                    d_below = abs((t.oy - 0.7 * t.size) - s.y0) + 0.3 * ts if below else 1e9
+                    num_cands.append((min(d_above, d_below) + 0.2 * abs(t.cx - (s.x0 + s.x1) / 2),
+                                      pi, t))
                 else:
                     if t.horizontal and not inside:
                         continue
@@ -197,7 +263,7 @@ class PageParser:
                 setattr(pins[pi], attr, t.text)
                 t.used = True
         for p in pins:   # connectors often print only the number, inside the body
-            if not p.number and re.fullmatch(r"\d{1,3}", p.name):
+            if not p.number and re.fullmatch(r"\d{1,3}|[A-Z]{1,2}\d{1,3}", p.name):
                 p.number, p.name = p.name, ""
 
     # ---------------------------------------------------------------- wires
@@ -229,7 +295,12 @@ class PageParser:
                     continue
                 s = segs[si]
                 if t.horizontal and s.horizontal:
-                    if not (s.x0 - 0.3 * ts <= t.cx <= s.x1 + 0.3 * ts):
+                    on = s.x0 - 0.3 * ts <= t.cx <= s.x1 + 0.3 * ts
+                    if not on and self.pp.cadence:
+                        # Cadence starts the label at the wire end, so it may overhang it
+                        ov = min(t.x1, s.x1) - max(t.x0, s.x0)
+                        on = ov >= 0.25 * (t.x1 - t.x0)
+                    if not on:
                         continue
                     d = s.y0 - t.oy
                     if -0.3 * ts <= d <= 0.7 * ts:
@@ -248,6 +319,26 @@ class PageParser:
                     continue
                 if best is None or score < best[0]:
                     best = (score, si)
+            if best is None and self.pp.cadence and t.horizontal:
+                # port-style label: text beside a free wire end, on the wire's line, with a gap
+                for si in grid.near(t.x0 - 3 * ts, t.y0 - ts, t.x1 + 3 * ts, t.y1 + ts):
+                    if si in exclude:
+                        continue
+                    s = segs[si]
+                    if not s.horizontal or abs(t.cy - s.y0) > 0.6 * ts:
+                        continue
+                    if t.x1 - 0.3 * ts <= s.x0 <= t.x1 + 3 * ts:
+                        gap, end = s.x0 - t.x1, (s.x0, s.y0)
+                    elif t.x0 - 3 * ts <= s.x1 <= t.x0 + 0.3 * ts:
+                        gap, end = t.x0 - s.x1, (s.x1, s.y1)
+                    else:
+                        continue
+                    if any(oi != si and _on_segment(end[0], end[1], segs[oi], self.tol)
+                           for oi in grid.near(end[0] - 1, end[1] - 1, end[0] + 1, end[1] + 1)):
+                        continue    # not a free end
+                    score = abs(gap) + ts
+                    if best is None or score < best[0]:
+                        best = (score, si)
             if best is not None:
                 out[best[1]].append(t.text)
                 t.used = True
@@ -269,8 +360,13 @@ class PageParser:
                     common = bool(COMMON_PREFIX_RE.match(t.text))
                     ref_c.append((d + (2 * ts if inside else 0) - (4 * ts if common else 0), bi, t))
                 elif re.search(r"\d", t.text) and re.search(r"[A-Za-z]", t.text) and len(t.text) >= 4 \
-                        and not BANK_RE.search(t.text):
-                    part_c.append((d - 0.05 * len(t.text), bi, t))
+                        and not BANK_RE.search(t.text) and not re.search(r"\s|:", t.text):
+                    score = d - 0.05 * len(t.text)
+                    if PART_LIKE_RE.match(t.text):
+                        score -= 1.5 * ts       # LTM4702EY#PBF, AD9084BBPZ, XCVU35P-..., ASP-184329-01
+                    if t.cy > b.y1:
+                        score -= 0.5 * ts       # part numbers are usually printed under the body
+                    part_c.append((score, bi, t))
         refs: dict[int, str] = {}
         parts: dict[int, str] = {}
         for cands, out in ((ref_c, refs), (part_c, parts)):
@@ -345,6 +441,15 @@ def parse_pdf(path: str, name: str | None = None, progress=None, use_markers: bo
 
         # capacitor plates: short parallel strokes close together next to a C refdes -> graphic
         plate_ex = _capacitor_plates(P, grid)
+        # strokes lying wholly inside a symbol body (pin-cell dividers, internal graphics) are
+        # not wires; text above them must not pass for a net label
+        # (Cadence pages only: elsewhere a large group frame can enclose whole sub-circuits)
+        pin_segs = {p.seg.idx for p in pins}
+        for b in (bodies if pp.cadence else []):
+            for si in grid.near(b.x0, b.y0, b.x1, b.y1):
+                s = pp.segs[si]
+                if si not in pin_segs and b.contains(s.x0, s.y0, P.tol) and b.contains(s.x1, s.y1, P.tol):
+                    plate_ex.add(si)
         uf = P.group_wires(grid, plate_ex)
         P.values = _passive_values(P)      # consume values before they can pass for net labels
         labels = P.find_labels(grid, plate_ex)
@@ -425,16 +530,25 @@ def parse_pdf(path: str, name: str | None = None, progress=None, use_markers: bo
                         comp_part.setdefault(t.text, P.values[id(t)])
 
     # merge multi-part symbols (IC16A..IC16E -> IC16)
-    base_count: dict[str, int] = defaultdict(int)
+    sections: dict[str, set[str]] = defaultdict(set)
     for ref, *_ in pending:
         m = re.match(r"^([A-Z]+\d+)([A-Z])$", ref)
         if m:
-            base_count[m.group(1)] += 1
+            sections[m.group(1)].add(ref)
     all_refs = {r for r, *_ in pending}
+
+    def _conflict(base: str) -> bool:
+        # a plain "U1" that is a different part than the "U1A" sections is its own component
+        if base not in all_refs or not comp_part.get(base):
+            return False
+        return any(comp_part.get(s) and comp_part[s] != comp_part[base] for s in sections[base])
+
+    merge_ok = {b for b, secs in sections.items()
+                if (len(secs) >= 2 or b in all_refs) and not _conflict(b)}
 
     def canon(ref: str) -> str:
         m = re.match(r"^([A-Z]+\d+)([A-Z])$", ref)
-        if m and (base_count[m.group(1)] >= 2 or m.group(1) in all_refs):
+        if m and m.group(1) in merge_ok:
             return m.group(1)
         return ref
 

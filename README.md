@@ -59,14 +59,18 @@ geometrik olarak yeniden kurar:
 3. **Net etiketleri**: telin üstünde duran metin. Aynı etiket PDF'in her yerinde aynı nettir.
    `NC` etiketleri bağlantısız sayılır, birleştirilmez.
 4. **Gövdesiz pasifler** (zigzag direnç, kondansatör): referans (R12) ve yanındaki sembole değen tel uçlarından bulunur.
-5. **Altium PDF'leri** her pinde görünmez işaret metni (`PI<ref>0<pin>`) taşır. Varsa pin
+5. **Cadence/Allegro PDF'leri** farklı çizilir: her çizgi iki kez ve "kapalı yol" olarak yazılır,
+   gövdeler dört ayrı çizgidir, FMC/VPX konnektörleri tek gövde yerine numaralı pin hücreleri
+   yığınıdır, net adları tel ucunun yanına boşlukla yazılır. Bu tarz sayfa bazında otomatik
+   tanınır ve bu kurallar yalnızca o sayfalarda uygulanır.
+6. **Altium PDF'leri** her pinde görünmez işaret metni (`PI<ref>0<pin>`) taşır. Varsa pin
    eşlemesi bunlarla kesinleştirilir.
-6. **Roller**: FPGA (parça numarası: XC…, 10M…, LFE… veya çok sayıda IO pini), seviye
+7. **Roller**: FPGA (parça numarası: XC…, 10M…, LFE… veya çok sayıda IO pini), seviye
    çevirici/buffer (TXS, TXB, SN74LVC, PCA9306…), konektör (J/P refdes, ASP-…, SEAF…), pasif.
-7. **İzleme**: seçilen pinden başlayıp net üzerinden ilerler. Seri direnç, ferrit, kuplaj
+8. **İzleme**: seçilen pinden başlayıp net üzerinden ilerler. Seri direnç, ferrit, kuplaj
    kondansatörü, seviye çevirici (A1↔B1, 1A↔1Y, SCL1↔SCL2 …) ve eşleşmiş konektörlerden geçer.
    Güç/toprak netlerinden geçmez. FPGA pinine ulaşınca durur.
-8. **Bank**: gövdedeki "BANK 34" başlığından veya Xilinx pin adı son ekinden (`IO_L1P_T0_65`).
+9. **Bank**: gövdedeki "BANK 34" başlığından veya Xilinx pin adı son ekinden (`IO_L1P_T0_65`).
    **Bank gerilimi**: o bankın `VCCO_xx` pinlerinin bağlı olduğu net.
 
 ### Ölçülen doğruluk
@@ -76,6 +80,11 @@ ZedBoard şematiğinde (Altium, 17 sayfa) görünmez işaretler doğru cevap ola
 %88'ini buldu, bulduklarının **%99.7'sini doğru nete** bağladı. FPGA'nın 484 pininin tamamı,
 pin adlarıyla birlikte doğru çıktı. Bulunamayanlar çoğunlukla küçük diyot dizileri ve OLED
 gibi FPGA izlemeyi etkilemeyen parçalar.
+
+Cadence çıktısı olarak Analog Devices ADS10 (Virtex UltraScale+ FPGA kartı) ile AD9084
+"Apollo" değerlendirme kartı birlikte denendi: FMC+ konnektörleri otomatik eşleşti (puan 0.87),
+AD9084'ün 112 sinyal pini FPGA ball ve bankasına kadar izlendi (SerDes hatları, HSCI, SPI, GPIO;
+aradaki seri direnç, kuplaj kondansatörü ve FXLA104 seviye çeviricileriyle birlikte).
 
 ## Kartlar arası konektör eşleştirme nasıl yapılır?
 
@@ -115,6 +124,7 @@ puan 0.88. Gerekçeler: eş parça numaraları, 88/88 sinyal adı eşleşmesi, 7
 - Veri yolları (bus) ve hiyerarşik sayfa portları özel olarak çözülmez. Netler etiket adlarıyla
   birleştirilir, bu çoğu tasarımda yeterlidir.
 - Konektörlerde pin eşlemesi 1:1 kabul edilir (A1 ⇄ A1). Aynalı eşleme henüz yok.
+- Diferansiyel çift arasındaki sonlandırma direnci (P–N, örn. 100 Ω) seri eleman sayılmaz.
 - Tanınmayan bir seviye çevirici veya buffer'da iz durur. `roles.py` içindeki `BUFFER_PART_RE` listesine eklenebilir.
 
 ## Geliştirme
