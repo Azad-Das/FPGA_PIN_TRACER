@@ -164,3 +164,25 @@ def test_ghost_text_with_offpage_flags(tmp_path):
     res = {r.start.pin_name: r for r in d.trace_component("AD", "TD3")}
     assert res["GPIO_17"].end.pin == "N36" and res["GPIO_17"].bank == "712"
     assert res["GPIO_18"].end.pin == "M37"
+
+
+def _conn(ref, part, pins):
+    from fpga_pin_tracer.model import Component, Pin
+    return Component(ref, part, role="connector", pins={n: Pin(n, nm, net) for n, nm, net in pins})
+
+
+def test_small_connector_pairs_are_only_suggested():
+    """Two same-type RF connectors (1 signal + GND) score high but take a cable: never auto."""
+    from fpga_pin_tracer.model import Board
+    a, b = Board("A"), Board("B")
+    rf = [("1", "SIG", "RF_IN"), ("2", "GND", "GND")]
+    a.components["KN20"] = _conn("KN20", "SMP-MSLD-PCS", rf)
+    b.components["KN30"] = _conn("KN30", "SMP-MSLD-PCS", [("1", "SIG", "RF_IN"), ("2", "GND", "GND")])
+    fmc = [(f"H{i}", f"LA{i:02d}_P", f"FMC_LA{i:02d}_P") for i in range(1, 21)] + [("H40", "GND", "GND")]
+    a.components["KN5"] = _conn("KN5", "ASP-184329-01", fmc)
+    b.components["KN1"] = _conn("KN1", "ASP-188588-01", fmc)
+    for brd in (a, b):
+        brd.rebuild_nets()
+    by = {(s.mate.ref_a, s.mate.ref_b): s for s in suggest_mates({"A": a, "B": b}, threshold=0.3)}
+    assert by[("KN5", "KN1")].auto
+    assert ("KN20", "KN30") in by and not by[("KN20", "KN30")].auto

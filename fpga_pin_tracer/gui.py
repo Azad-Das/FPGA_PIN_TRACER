@@ -25,7 +25,6 @@ from .trace import Design
 COLUMNS = ["Kart", "Bileşen", "Parça", "Pin", "Pin adı", "Net", "FPGA kartı", "FPGA", "Pin",
            "FPGA pin adı", "Bank", "Bank gerilimi", "Ara katman"]
 ROLE_LABELS = {"other": "Cihaz", "connector": "Konektör", "buffer": "Buffer / çevirici"}
-AUTO_MATE_SCORE = 0.6
 
 
 # ----------------------------------------------------------------------------- background parsing
@@ -142,7 +141,7 @@ class MateDialog(QDialog):
 
     def _suggest(self):
         for s in suggest_mates(self.design.boards, threshold=0.3):
-            self._add_row(s.mate, s.score, s.reasons, s.score >= AUTO_MATE_SCORE)
+            self._add_row(s.mate, s.score, s.reasons, s.auto)
 
     def _add_manual(self):
         ba, bb = self.cb[0].currentText(), self.cb[2].currentText()
@@ -287,7 +286,7 @@ class MainWindow(QMainWindow):
             self.design.add_board(b)
         if len(self.design.boards) > 1:
             known = {(m.board_a, m.ref_a) for m in self.design.mates} | {(m.board_b, m.ref_b) for m in self.design.mates}
-            new = [s for s in suggest_mates(self.design.boards) if s.score >= AUTO_MATE_SCORE
+            new = [s for s in suggest_mates(self.design.boards) if s.auto
                    and (s.mate.board_a, s.mate.ref_a) not in known and (s.mate.board_b, s.mate.ref_b) not in known]
             self.design.mates += [s.mate for s in new]
             if new:

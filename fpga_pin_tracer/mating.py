@@ -8,7 +8,10 @@ Each connector pair (A on one board, B on another) is scored from four independe
                   ("FMC-LA01_CC_P" on the carrier and "LA01_P_CC" on the card are the same)?
 * power pattern - ground and supply pins must line up on both sides
 
-The best-scoring pairs are offered to the user, who confirms or edits them.
+The best-scoring pairs are offered to the user, who confirms or edits them. A pair is applied
+automatically only when it scores high AND shares enough signal pins to prove it: two RF connectors
+of the same type (one signal pin plus ground) score well on every clue yet take a cable, not the
+other board, so small pairs are only suggested.
 """
 
 from __future__ import annotations
@@ -31,6 +34,8 @@ KNOWN_FAMILIES = [
     ("Samtec ERF8/ERM8", ("ERF8",), ("ERM8",)),
     ("Samtec SSW/TSW", ("SSW", "SSQ", "SLW"), ("TSW", "TSM", "HTSW")),
 ]
+AUTO_MATE_SCORE = 0.6       # auto-apply: minimum score ...
+MIN_AUTO_SIGNALS = 8        # ... and minimum shared signal (non power/ground) pins
 DROP_TOKENS = {"FMC", "FMC1", "FMC2", "HPC", "LPC", "HSPC", "CC", "VPX", "P0", "P1", "J1", "J2", "CONN"}
 
 
@@ -39,6 +44,12 @@ class MateSuggestion:
     mate: Mate
     score: float
     reasons: list[str]
+    signal_pins: int = 0    # shared pin numbers that are signals on both sides
+
+    @property
+    def auto(self) -> bool:
+        """Strong enough to apply without asking."""
+        return self.score >= AUTO_MATE_SCORE and self.signal_pins >= MIN_AUTO_SIGNALS
 
 
 def norm_signal(name: str) -> str:
@@ -81,7 +92,7 @@ def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
     score += 0.2 * jacc
     reasons.append(f"ortak pin numarası: {len(common)} ({jacc:.0%})")
 
-    sig_total = sig_match = pwr_total = pwr_match = 0
+    sig_total = sig_match = pwr_total = pwr_match = sig_pins = 0
     for n in common:
         a, b = ca.pins[n], cb.pins[n]
         a_pwr = is_power_net(ba, a.net) or bool(GROUND_PIN_RE.match(a.name or ""))
@@ -90,6 +101,7 @@ def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
             pwr_total += 1
             pwr_match += a_pwr == b_pwr
             continue
+        sig_pins += 1
         names_a = {norm_signal(x) for x in (a.net, a.name) if x and not x.startswith("N$")}
         names_b = {norm_signal(x) for x in (b.net, b.name) if x and not x.startswith("N$")}
         names_a.discard("")
@@ -106,7 +118,9 @@ def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
         r = pwr_match / pwr_total
         score += 0.1 * r
         reasons.append(f"güç/toprak deseni: {pwr_match}/{pwr_total}")
-    return MateSuggestion(Mate(ba.name, ra, bb.name, rb), round(score, 3), reasons)
+    if sig_pins < MIN_AUTO_SIGNALS:
+        reasons.append(f"yalnızca {sig_pins} ortak sinyal pini: otomatik uygulanmaz (RF/kablo konnektörü olabilir)")
+    return MateSuggestion(Mate(ba.name, ra, bb.name, rb), round(score, 3), reasons, sig_pins)
 
 
 def suggest_mates(boards: dict[str, Board], threshold: float = 0.35) -> list[MateSuggestion]:

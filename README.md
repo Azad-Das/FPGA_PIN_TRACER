@@ -103,7 +103,10 @@ aradaki seri direnç, kuplaj kondansatörü ve FXLA104 seviye çeviricileriyle b
 4. **Güç/toprak deseni**: GND, 3P3V, 12P0V, VADJ pinleri iki tarafta aynı numaralarda olmalı.
    Bu, yanlış eşleşmeleri eler.
 
-Puan 0.6 ve üstüyse eşleşme otomatik uygulanır, daha düşükse yalnızca önerilir. Son karar
+Puan 0.6 ve üstüyse **ve** iki konnektör en az 8 ortak sinyal pini (güç/toprak dışı) paylaşıyorsa
+eşleşme otomatik uygulanır; aksi halde yalnızca önerilir (pencerede işaretsiz gelir, işaretleyerek
+uygulanabilir). Böylece aynı tipte iki RF konnektörü (tek sinyal + toprak; kartlar arası değil, kabloyla
+dış girişe bağlanır) her ipucunda yüksek puan alsa da kendiliğinden eşleştirilmez. Son karar
 kullanıcıdadır. Eşleşen konektörlerde pin N ⇄ pin N kabul edilir.
 
 Örnek: ZedBoard `J1` (FMC LPC, ASP-134603-01) ile XM105 `J17` (FMC HPC, ASP-134488-01) için

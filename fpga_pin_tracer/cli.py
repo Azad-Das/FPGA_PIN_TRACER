@@ -41,9 +41,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"# {b.name}: {b.stats()}", file=sys.stderr)
     if a.auto_mate:
         for s in suggest_mates(d.boards):
-            d.mates.append(s.mate)
-            print(f"# eşleşme: {s.mate.board_a}/{s.mate.ref_a} <-> {s.mate.board_b}/{s.mate.ref_b} "
-                  f"(puan {s.score:.2f})", file=sys.stderr)
+            tag = "eşleşme" if s.auto else "öneri (uygulanmadı, --mate ile ekleyin)"
+            if s.auto:
+                d.mates.append(s.mate)
+            print(f"# {tag}: {s.mate.board_a}/{s.mate.ref_a} <-> {s.mate.board_b}/{s.mate.ref_b} "
+                  f"(puan {s.score:.2f}, {s.signal_pins} ortak sinyal pini)", file=sys.stderr)
     for m in a.mate:
         left, right = m.split("=")
         ba, ra = left.split(":")
