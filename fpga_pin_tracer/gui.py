@@ -298,6 +298,19 @@ class MainWindow(QMainWindow):
                               for s in new) +
                     "\n\nKontrol etmek veya değiştirmek için 'Konektör eşleştirme…' düğmesini kullanın.")
         self.design_changed()
+        empty = [b for b in boards if sum(len(c.pins) for c in b.components.values()) < 10]
+        if empty:
+            import io
+            from .diagnose import diagnose
+            buf = io.StringIO()
+            for b in empty:
+                diagnose(b.source, out=buf)
+            verdict = "\n".join(ln for ln in buf.getvalue().splitlines()
+                                if ln.startswith(("===", "SONUÇ", "  ", "oluşturan", "sayfa:")))
+            QMessageBox.warning(
+                self, "Şematik okunamadı",
+                "Bu PDF'lerden neredeyse hiç bağlantı çıkarılamadı:\n\n" + verdict +
+                "\n\nAyrıntı için PDF'i diagnose.bat üzerine sürükleyin (çıktıda şema içeriği yer almaz).")
 
     def remove_board(self):
         item = self.board_list.currentItem()

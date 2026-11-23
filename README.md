@@ -117,6 +117,14 @@ puan 0.88. Gerekçeler: eş parça numaraları, 88/88 sinyal adı eşleşmesi, 7
 - **TXT**: insan okunur, bileşen başlıkları altında pin listesi ve ara katmanlar.
 - **Uygulama içi tablo**: filtrelenebilir, sıralanabilir, ara katmanlar açılır kapanır.
 
+## Şematik okunmuyorsa
+
+Bir PDF'ten (neredeyse) hiç bağlantı çıkmazsa uygulama bir uyarıyla nedenini söyler. Ayrıntı için
+PDF'i `diagnose.bat` dosyasının üzerine sürükleyin. Çıktı yalnızca sayılardan, font türlerinden ve
+PDF'i üreten aracın adından oluşur; net adı, parça numarası gibi şema içeriği göstermez, bu yüzden
+gizli şemalarda da paylaşılabilir. Sık nedenler: taranmış (resim) PDF, eğriye çevrilmiş yazılar,
+Unicode eşlemesi olmayan fontlar.
+
 ## Bilinen sınırlamalar
 
 - Taranmış (resim) PDF'ler desteklenmez. PDF'te vektör metin ve çizgi olmalı. Altium, OrCAD,

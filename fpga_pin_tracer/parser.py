@@ -285,10 +285,15 @@ class PageParser:
         """Map segment index -> net labels sitting on it."""
         ts, segs = self.ts, self.pp.segs
         out: dict[int, list[str]] = defaultdict(list)
+        graphics = self.pp.graphics
         for t in self.visible:
             if t.used or not NET_RE.match(t.text) or not re.search(r"[A-Za-z]", t.text) \
                     or VALUE_RE.match(t.text):
                 continue
+            if PASSIVE_RE.match(t.text) and any(
+                    g.x1 >= t.x0 - ts and g.x0 <= t.x1 + ts and g.y1 >= t.y0 - 1.5 * ts and g.y0 <= t.y1 + 1.5 * ts
+                    for g in graphics):
+                continue    # "R175" printed over a zigzag on a wire is the resistor's refdes
             best = None
             for si in grid.near(t.x0 - ts, t.y0 - ts, t.x1 + ts, t.y1 + ts):
                 if si in exclude:
@@ -360,7 +365,8 @@ class PageParser:
                     common = bool(COMMON_PREFIX_RE.match(t.text))
                     ref_c.append((d + (2 * ts if inside else 0) - (4 * ts if common else 0), bi, t))
                 elif re.search(r"\d", t.text) and re.search(r"[A-Za-z]", t.text) and len(t.text) >= 4 \
-                        and not BANK_RE.search(t.text) and not re.search(r"\s|:", t.text):
+                        and not BANK_RE.search(t.text) and not re.search(r"\s|:", t.text) \
+                        and not VALUE_RE.match(t.text):
                     score = d - 0.05 * len(t.text)
                     if PART_LIKE_RE.match(t.text):
                         score -= 1.5 * ts       # LTM4702EY#PBF, AD9084BBPZ, XCVU35P-..., ASP-184329-01
@@ -661,20 +667,58 @@ def _two_pin_parts(P: PageParser, grid: Grid, plate_ex: set[int], bodies: list[B
     """Yield (refdes, value, [segment index of pin 1, pin 2]) for passives drawn without a body."""
     ts, segs, tol = P.ts, P.pp.segs, P.tol
     graphics = list(P.pp.graphics) + [r for r in P.pp.rects if r.w < 1.5 * ts or r.h < 1.5 * ts]
-    graphics += [Box(segs[i].x0, segs[i].y0, segs[i].x1, segs[i].y1) for i in plate_ex]
+    plates = [Box(segs[i].x0, segs[i].y0, segs[i].x1, segs[i].y1) for i in plate_ex]
+    plate_ids = {id(b) for b in plates}
+    graphics += plates
+    cadence = P.pp.cadence
+
+    def gscore(t, g):
+        d = g.dist(t.cx, t.cy)
+        if cadence and (g.y0 + g.y1) / 2 < t.cy:
+            d += 1.0 * ts       # Cadence prints the refdes above its symbol
+        return d
+
+    # visit refdes texts closest-first so a crowded label cannot steal a neighbour's symbol
+    todo = []
     for t in P.visible:
         if t.used or not PASSIVE_RE.match(t.text):
             continue
-        # symbol drawing = graphics within reach of the refdes
         cand = [g for g in graphics if g.dist(t.cx, t.cy) <= 2.5 * ts and g.w < 6 * ts and g.h < 6 * ts]
+        if cand:
+            todo.append((min(gscore(t, g) for g in cand), t, cand))
+    if cadence:
+        todo.sort(key=lambda x: x[0])
+    claimed: set[int] = set()
+    for _, t, cand in todo:
+        if t.used:
+            continue
+        cand = [g for g in cand if id(g) not in claimed]
         if not cand:
             continue
-        g0 = min(cand, key=lambda g: g.dist(t.cx, t.cy))
+        g0 = min(cand, key=lambda g: gscore(t, g))
         sym = Box(g0.x0, g0.y0, g0.x1, g0.y1)
-        for g in cand:   # merge graphics touching the nearest one (e.g. two capacitor plates)
-            if g is not g0 and g.dist((g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2) < 3 * ts and \
-                    sym.dist((g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2) < 1.0 * ts:
-                sym = Box(min(sym.x0, g.x0), min(sym.y0, g.y0), max(sym.x1, g.x1), max(sym.y1, g.y1))
+        if cadence:
+            # Cadence splits a zigzag into touching arcs; neighbours in a dense column of
+            # resistors sit only a few points away, so merge strictly touching pieces, transitively
+            members = {id(g0)}
+            grew = True
+            while grew:
+                grew = False
+                for g in cand:
+                    if id(g) in members:
+                        continue
+                    # capacitor plates face each other across a gap; arcs of a zigzag touch
+                    gap = 1.0 * ts if (id(g) in plate_ids and id(g0) in plate_ids) else tol
+                    if any(g.x0 <= m.x1 + gap and g.x1 >= m.x0 - gap and g.y0 <= m.y1 + gap
+                           and g.y1 >= m.y0 - gap for m in cand if id(m) in members):
+                        members.add(id(g))
+                        sym = Box(min(sym.x0, g.x0), min(sym.y0, g.y0), max(sym.x1, g.x1), max(sym.y1, g.y1))
+                        grew = True
+        else:
+            for g in cand:   # merge graphics touching the nearest one (e.g. two capacitor plates)
+                if g is not g0 and g.dist((g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2) < 3 * ts and \
+                        sym.dist((g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2) < 1.0 * ts:
+                    sym = Box(min(sym.x0, g.x0), min(sym.y0, g.y0), max(sym.x1, g.x1), max(sym.y1, g.y1))
         ends = []
         for si in grid.near(sym.x0 - tol, sym.y0 - tol, sym.x1 + tol, sym.y1 + tol):
             if si in plate_ex:
@@ -693,4 +737,6 @@ def _two_pin_parts(P: PageParser, grid: Grid, plate_ex: set[int], bodies: list[B
         uniq.sort(key=lambda e: (e[0], e[1]))
         value = P.values.get(id(t), "")
         t.used = True
+        if cadence:
+            claimed.update(id(g) for g in cand if sym.contains((g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2, tol))
         yield t.text, value, [uniq[0][2], uniq[1][2]]
