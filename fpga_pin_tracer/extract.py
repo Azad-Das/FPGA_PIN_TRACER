@@ -311,16 +311,19 @@ def extract_page(page: pymupdf.Page) -> PagePrims:
             t.hidden = False
         cell = 20.0
         boxes: dict[tuple[int, int], list[Text]] = {}
-        for t in texts:
-            for gx in range(int(t.x0 // cell), int(t.x1 // cell) + 1):
-                for gy in range(int(t.y0 // cell), int(t.y1 // cell) + 1):
+        for t in texts:     # register over the padded box used by in_text below
+            for gx in range(int((t.x0 - 0.6) // cell), int((t.x1 + 0.6) // cell) + 1):
+                for gy in range(int((t.y0 - 0.5 * t.size) // cell), int((t.y1 + 0.5 * t.size) // cell) + 1):
                     boxes.setdefault((gx, gy), []).append(t)
 
         def in_text(x0, y0, x1, y1) -> bool:
-            pad = 0.6
-            for t in boxes.get((int(x0 // cell), int(y0 // cell)), ()):
-                if t.x0 - pad <= x0 and x1 <= t.x1 + pad and t.y0 - pad <= y0 and y1 <= t.y1 + pad:
-                    return True
+            # the invisible layer need not sit exactly on the drawn letters: allow half a
+            # text height of vertical offset
+            for gx, gy in {(int(x0 // cell), int(y0 // cell)), (int(x1 // cell), int(y1 // cell))}:
+                for t in boxes.get((gx, gy), ()):
+                    px, py = 0.6, 0.5 * t.size
+                    if t.x0 - px <= x0 and x1 <= t.x1 + px and t.y0 - py <= y0 and y1 <= t.y1 + py:
+                        return True
             return False
 
         segs = [s for s in segs if not in_text(s.x0, s.y0, s.x1, s.y1)]

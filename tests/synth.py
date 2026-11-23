@@ -32,13 +32,14 @@ class Sheet:
 
 
     def symbol(self, x: float, y: float, ref: str, part: str, left=(), right=(), bank: str | None = None,
-               width: float = 90, wire: float = 70, flags: bool = False):
+               width: float = 90, wire: float = 70, flags: bool = False,
+               pitch: float = PITCH, mid_numbers: bool = False):
         """Body at (x, y). left/right: [(pin number, pin name, net label or None)].
 
         Pins with a net label get a wire ending in that label; returns {pin number: wire end point}.
         """
         n = max(len(left), len(right), 1)
-        h = (n + 1) * PITCH
+        h = (n + 1) * pitch
         self.rect(x, y, x + width, y + h)
         self.text(x, y - 4, ref)
         self.text(x, y + h + 10, part)
@@ -47,11 +48,13 @@ class Sheet:
         ends = {}
         for side, pins in (("L", left), ("R", right)):
             for i, (num, name, net) in enumerate(pins):
-                py = y + (i + 1) * PITCH + 4
+                py = y + (i + 1) * pitch + 4
+                # number baseline: just above the line, or centred between this line and the one above
+                ny = py - pitch / 2 + 0.35 * FS if mid_numbers else py - 1.5
                 if side == "L":
                     x_out = x - STUB
                     self.line(x_out, py, x, py)
-                    self.text(x - STUB + 2, py - 1.5, num)
+                    self.text(x - STUB + 2, ny, num)
                     self.text(x + 3, py + 2.5, name)
                     if net and flags:   # off-page flag "<<" at the wire end, name beyond it
                         self.line(x_out - wire, py, x_out, py)
@@ -64,7 +67,7 @@ class Sheet:
                 else:
                     x_out = x + width + STUB
                     self.line(x + width, py, x_out, py)
-                    self.text(x + width + 2, py - 1.5, num)
+                    self.text(x + width + 2, ny, num)
                     self.text(x + width - 3 - 3.6 * len(name), py + 2.5, name)
                     if net and flags:
                         self.line(x_out, py, x_out + wire, py)
@@ -141,8 +144,10 @@ class GhostTextSheet(Sheet):
     """Mimics SCH2PDF-style output: letters are drawn as line strokes (a crude stroke font) and
     the real text is an invisible layer on top (text render mode 3)."""
 
+    shift = 3.0     # the invisible layer does not sit exactly on the drawn letters
+
     def text(self, x: float, y: float, s: str, size: float = FS):
-        self.page.insert_text((x, y), s, fontsize=size, fontname="helv", render_mode=3)
+        self.page.insert_text((x, y - self.shift), s, fontsize=size, fontname="helv", render_mode=3)
         w, h = 0.55 * size, 0.7 * size
         cx = x
         for ch in s:
@@ -216,10 +221,13 @@ def backplane(path: str):
 def ghost_fpga_board(path: str):
     """SCH2PDF-like FPGA card: stroke letters, invisible text, off-page flags, TD/KN refdes."""
     s = GhostTextSheet()
-    s.symbol(520, 80, "TD10", "XCVP1502-1MLIVSVA2785", flags=True, left=[
-        ("AE12", "IO_L1P_XCC_N0P0_M0P0_700", "FMCP1_LA02_P"),
-        ("AF12", "IO_L1N_XCC_N0P1_M0P1_700", "FMCP1_LA02_N"),
-        ("AC9", "VCCO_700", "VCCO_1V5"),
+    # pin numbers centred between two pin lines, as in the real board this mimics
+    s.symbol(520, 80, "TD10", "XCVP1502-1MLIVSVA2785", flags=True, pitch=20, mid_numbers=True, left=[
+        ("N36", "IO_L6P_GC_XCC_N2P0_712", "FMCP1_LA02_P"),
+        ("M37", "IO_L6N_GC_XCC_N2P1_712", "FMCP1_LA02_N"),
+        ("N32", "IO_L7P_N2P2_712", "FMCP1_LA03_P"),
+        ("M32", "IO_L7N_N2P3_712", "FMCP1_LA03_N"),
+        ("AC9", "VCCO_712", "VCCO_1V5"),
     ])
     s.symbol(150, 80, "KN5", "ASP-184329-01", flags=True, right=[
         ("H7", "LA02_P", "FMCP1_LA02_P"),

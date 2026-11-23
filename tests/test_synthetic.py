@@ -154,10 +154,13 @@ def test_ghost_text_with_offpage_flags(tmp_path):
     d.add_board(ad)
     assert kd.components["TD10"].role == "fpga"
     assert kd.components["KN5"].role == "connector" and ad.components["KN1"].role == "connector"
-    assert kd.components["TD10"].pins["AE12"].net == "FMCP1_LA02_P"
+    td = kd.components["TD10"].pins
+    assert td["N36"].name == "IO_L6P_GC_XCC_N2P0_712" and td["N36"].net == "FMCP1_LA02_P"
+    assert td["M37"].name == "IO_L6N_GC_XCC_N2P1_712" and td["M37"].net == "FMCP1_LA02_N"
+    assert td["M32"].name == "IO_L7N_N2P3_712"
     mates = [s.mate for s in suggest_mates(d.boards)]
     assert {(m.ref_a, m.ref_b) for m in mates} & {("KN5", "KN1"), ("KN1", "KN5")}
     d.mates += mates
     res = {r.start.pin_name: r for r in d.trace_component("AD", "TD3")}
-    assert res["GPIO_17"].end.pin == "AE12"
-    assert res["GPIO_18"].end.pin == "AF12"
+    assert res["GPIO_17"].end.pin == "N36" and res["GPIO_17"].bank == "712"
+    assert res["GPIO_18"].end.pin == "M37"

@@ -30,6 +30,7 @@ PASSIVE_RE = re.compile(r"^(R|RN|C|L|FB|D|F|JP|TP|Y|X)\d{1,4}[A-Z]?$")
 PIN_NUM_RE = re.compile(r"^(?:[A-Z]{0,3}\d{1,3}[A-Z]?|[A-Z]{1,2})$")
 NET_RE = re.compile(r"^[A-Za-z0-9_+\-./\\#~\[\]!()]{2,64}$")
 NC_RE = re.compile(r"^(NC|N\.C\.?|N/C|NO_?CONNECT|DNC|DNP|OPEN)$", re.I)
+_FAR = 1e6     # score marker: pin-number candidate outside the usual window
 PART_LIKE_RE = re.compile(r"^[A-Z]{2,6}-?\d{3,}[A-Z0-9#\-/.,()+_]*$")
 BANK_RE = re.compile(r"\bBANK\s*_?(\d{1,3}[A-Z]?)\b", re.I)
 # component values that must never be read as net labels: 150uF, 0.1uF, 10K, 4K7, 100, 1nF, 600R
@@ -228,9 +229,14 @@ class PageParser:
                         continue
                     if not (s.x0 - 0.5 * ts <= t.cx <= s.x1 + 0.5 * ts):
                         continue
+                    if not PIN_NUM_RE.match(t.text):
+                        continue
                     above = s.y0 - 1.1 * ts <= t.oy <= s.y0 + 0.35 * ts
                     below = s.y0 - 0.3 * ts <= t.y0 <= s.y0 + 0.6 * ts
-                    if not (above or below) or not PIN_NUM_RE.match(t.text):
+                    if not (above or below):
+                        if abs(t.cy - s.y0) <= 2.5 * ts:
+                            # too far for a lone guess; kept for the per-edge convention check
+                            num_cands.append((_FAR, pi, t))
                         continue
                     # Measure from the glyphs, not the bbox (which includes ascender/descender
                     # space): baseline-to-line when above, cap-top-to-line when below. Numbers
@@ -255,6 +261,7 @@ class PageParser:
                     if abs(t.cx - s.x0) > 1.2 * ts or not PIN_NUM_RE.match(t.text):
                         continue
                     num_cands.append((abs(t.cx - s.x0) + 0.2 * abs(t.cy - (s.y0 + s.y1) / 2), pi, t))
+        num_cands = self._prefer_number_side(pins, bodies, num_cands)
         for cands, attr in ((num_cands, "number"), (name_cands, "name")):
             cands.sort(key=lambda c: c[0])
             for _, pi, t in cands:
@@ -265,6 +272,55 @@ class PageParser:
         for p in pins:   # connectors often print only the number, inside the body
             if not p.number and re.fullmatch(r"\d{1,3}|[A-Z]{1,2}\d{1,3}", p.name):
                 p.number, p.name = p.name, ""
+
+    def _prefer_number_side(self, pins, bodies, num_cands):
+        """Decide per body edge whether pin numbers sit above or below their pin line.
+
+        With tight pitch a number can sit midway between two lines, so judging each number alone
+        picks the wrong neighbour about half the time. All numbers on one edge follow one
+        convention, and the end rows reveal it: with numbers above, the topmost number has no
+        line above it (and vice versa). Count, for every number, whether a pin line lies within
+        one pitch below it and above it; the larger count wins and its candidates are preferred.
+        """
+        ts = self.ts
+        groups: dict[tuple[int, bool], list[int]] = defaultdict(list)
+        for pi, p in enumerate(pins):
+            if p.seg.horizontal:
+                b = bodies[p.body]
+                groups[(p.body, p.outer[0] < (b.x0 + b.x1) / 2)].append(pi)
+        prefer: dict[int, str] = {}
+        for key, idxs in groups.items():
+            if len(idxs) < 3:
+                continue
+            ys = sorted(pins[i].seg.y0 for i in idxs)
+            diffs = sorted(b - a for a, b in zip(ys, ys[1:]) if b - a > 0.1)
+            if not diffs:
+                continue
+            pitch = diffs[len(diffs) // 2]
+            texts = {id(t): t for _, pi, t in num_cands if pi in set(idxs)}.values()
+            above = below = 0
+            for t in texts:
+                if any(0 < y - t.cy <= 0.9 * pitch for y in ys):
+                    above += 1
+                if any(0 < t.cy - y <= 0.9 * pitch for y in ys):
+                    below += 1
+            if above != below:
+                side = "above" if above > below else "below"
+                for i in idxs:
+                    prefer[i] = side
+        out = []
+        for score, pi, t in num_cands:
+            side = prefer.get(pi)
+            if score >= _FAR and not side:
+                continue        # far candidates only count when the edge convention is known
+            if side:
+                y = pins[pi].seg.y0
+                if (side == "above") != (t.cy < y):
+                    score += 10 * ts        # wrong side for this edge's convention
+                else:
+                    score = abs(t.cy - y) + 0.2 * abs(t.cx - (pins[pi].seg.x0 + pins[pi].seg.x1) / 2)
+            out.append((score, pi, t))
+        return out
 
     # ---------------------------------------------------------------- wires
     def group_wires(self, grid: Grid, exclude: set[int]) -> UF:
