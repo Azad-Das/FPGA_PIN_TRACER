@@ -245,3 +245,26 @@ def test_identical_connectors_are_ambiguous():
         brd.rebuild_nets()
     sugg = suggest_mates({"A": a, "B": b}, threshold=0.3)
     assert len(sugg) == 4 and all(s.ambiguous and not s.auto for s in sugg)
+
+
+def test_board_to_board_connector_with_different_parts_is_offered():
+    """FPGA card and main board use different in-house part numbers and different net names on a
+    60-pin board-to-board connector: score stays low, but full pin overlap means it must be shown."""
+    from fpga_pin_tracer.model import Board
+    a, b = Board("FPGA"), Board("MAIN")
+    pins_a = [(f"{i}", f"{i}", f"FPGA_IO_{i}") for i in range(1, 51)] + [(f"{i}", "GND", "GND") for i in range(51, 61)]
+    pins_b = [(f"{i}", f"{i}", f"MB_SIG_{i}") for i in range(1, 51)] + [(f"{i}", "GND", "GND") for i in range(51, 61)]
+    pins_b += [(f"MH{i}", f"MH{i}", "GND") for i in range(1, 5)]        # mounting holes on one side only
+    a.components["KN2"] = _conn("KN2", "MJ-0000-11111", pins_a)
+    b.components["KN2"] = _conn("KN2", "MJ-0000-22222", pins_b)
+    for brd in (a, b):
+        brd.rebuild_nets()
+    sugg = suggest_mates({"FPGA": a, "MAIN": b}, threshold=0.3)
+    assert len(sugg) == 1 and sugg[0].score < 0.3 and not sugg[0].auto
+
+
+def test_female_male_part_numbers_are_a_pair():
+    from fpga_pin_tracer.mating import _gender_pair
+    assert _gender_pair("ADF6-60-03.5-L-4-2-A-TR", "ADM6-60-03.5-L-4-2-A-TR")
+    assert not _gender_pair("ADF6-60-03.5-L-4-2-A-TR", "ADF6-60-03.5-L-4-2-A-TR")
+    assert not _gender_pair("MJ-0000-11111", "MJ-0000-22222")

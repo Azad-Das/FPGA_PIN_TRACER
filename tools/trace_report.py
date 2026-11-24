@@ -23,7 +23,7 @@ from collections import Counter, deque
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fpga_pin_tracer import trace as trace_mod  # noqa: E402
-from fpga_pin_tracer.mating import suggest_mates  # noqa: E402
+from fpga_pin_tracer.mating import score_pair, suggest_mates  # noqa: E402
 from fpga_pin_tracer.model import Mate  # noqa: E402
 from fpga_pin_tracer.parser import parse_pdf  # noqa: E402
 from fpga_pin_tracer.roles import is_power_net, is_signal_pin, pass_through  # noqa: E402
@@ -100,12 +100,42 @@ def main(argv=None) -> int:
           + (f" | FPGA: {', '.join(fpgas)}" if fpgas else ""))
     w("")
     w("KONNEKTÖR ÖNERİLERİ (puan, ortak sinyal pini, otomatik mi):")
-    for s in suggest_mates(d.boards, threshold=0.3):
+    sugg = suggest_mates(d.boards, threshold=0.3)
+    for s in sugg:
         m = s.mate
         w(f"  {m.board_a}/{m.ref_a} <-> {m.board_b}/{m.ref_b}  puan {s.score:.2f}  "
-          f"{s.signal_pins} sinyal pini  {'OTOMATİK' if s.auto else 'öneri'}")
+          f"{s.signal_pins} sinyal pini  ortak pin %{s.overlap * 100:.0f}  "
+          f"{'OTOMATİK' if s.auto else 'öneri'}{'  BELİRSİZ' if s.ambiguous else ''}")
         if s.auto and not a.no_auto_mate:
             d.mates.append(m)
+    # connectors that got no suggestion: their best partner and why it fell short
+    offered = {(s.mate.board_a, s.mate.ref_a) for s in sugg} | {(s.mate.board_b, s.mate.ref_b) for s in sugg}
+    lonely = []
+    for bn, b in d.boards.items():
+        for r, c in b.components.items():
+            if c.role != "connector" or len(c.pins) < 2 or (bn, r) in offered:
+                continue
+            best = None
+            for on, ob in d.boards.items():
+                if on == bn:
+                    continue
+                for orf, oc in ob.components.items():
+                    if oc.role == "connector" and len(oc.pins) >= 2:
+                        sp = score_pair(b, r, ob, orf)
+                        if best is None or (sp.score, sp.overlap) > (best.score, best.overlap):
+                            best = sp
+            if best and best.overlap > 0:
+                lonely.append(best)
+    if lonely:
+        w("ÖNERİ ÇIKMAYAN KONNEKTÖRLER (en iyi aday, puan, ortak pin, sinyal pini, gerekçe):")
+        for sp in sorted(lonely, key=lambda x: -x.score):
+            m = sp.mate
+            w(f"  {m.board_a}/{m.ref_a} ({d.boards[m.board_a].components[m.ref_a].part or '-'}, "
+              f"{len(d.boards[m.board_a].components[m.ref_a].pins)} pin) -> {m.board_b}/{m.ref_b} "
+              f"({d.boards[m.board_b].components[m.ref_b].part or '-'}, "
+              f"{len(d.boards[m.board_b].components[m.ref_b].pins)} pin)  puan {sp.score:.2f}  "
+              f"ortak pin %{sp.overlap * 100:.0f}  {sp.signal_pins} sinyal pini")
+            w("          · " + "; ".join(sp.reasons))
     for spec in a.mate:
         l, r = spec.split("=")
         ba, ra = l.split(":")

@@ -32,6 +32,11 @@ eden bir test var (`test_three_boards_like_som_mainboard_rf` ve diğerleri):
 - Aynı tipte birden çok konnektör varsa (ana karttaki KN2/KN3/KN4 gibi) ve sinyal adları eşleşmiyorsa,
   eşit puanlı eşleşmeler "belirsiz" işaretlenir ve otomatik uygulanmaz. Bu konnektörler **elle
   eşleştirilmelidir** (uygulamada Konnektör eşleştirme penceresi, raporda `--mate`).
+- İki kartta parça numarası farklı (şirket içi numara, ADF6/ADM6 gibi dişi/erkek) ve net adları farklı
+  olan kart-kart konnektörleri 0.3 puanın altında kalıp pencerede hiç görünmüyordu (FPGA kartı ⇄ ana
+  kart). Artık pin numaralarının %80'ini paylaşan ve en az 8 ortak sinyal pini olan çiftler puan ne
+  olursa olsun öneri olarak listeleniyor; ADF6/ADM6 eş aile olarak tanınıyor. Raporda yeni
+  `ÖNERİ ÇIKMAYAN KONNEKTÖRLER` bölümü, öneri alamayan her konnektörün en iyi adayını ve nedenini yazar.
 
 ## Uygulama ne yapıyor (kısaca)
 
@@ -89,7 +94,7 @@ Windows'ta proje klasöründe `run.bat` bir kez çalıştırılınca `.venv` kur
 .venv\Scripts\python -m pytest -q
 ```
 
-Testlerin hepsi geçmeli (şu an 15).
+Testlerin hepsi geçmeli (şu an 17).
 
 ## Test adımları
 

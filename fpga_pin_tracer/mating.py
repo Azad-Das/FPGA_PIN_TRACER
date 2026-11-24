@@ -32,10 +32,14 @@ KNOWN_FAMILIES = [
     ("Samtec QSH/QTH", ("QSH",), ("QTH",)),
     ("Samtec QSE/QTE", ("QSE",), ("QTE",)),
     ("Samtec ERF8/ERM8", ("ERF8",), ("ERM8",)),
+    ("Samtec ADF6/ADM6", ("ADF6",), ("ADM6",)),
     ("Samtec SSW/TSW", ("SSW", "SSQ", "SLW"), ("TSW", "TSM", "HTSW")),
 ]
 AUTO_MATE_SCORE = 0.6       # auto-apply: minimum score ...
 MIN_AUTO_SIGNALS = 8        # ... and minimum shared signal (non power/ground) pins
+SHOW_OVERLAP = 0.8          # always offer pairs sharing this much of their pin numbers (and enough
+                            # signal pins), however low the score: board-to-board connectors with
+                            # in-house part numbers and different net names on each board look like this
 DROP_TOKENS = {"FMC", "FMC1", "FMC2", "HPC", "LPC", "HSPC", "CC", "VPX", "P0", "P1", "J1", "J2", "CONN"}
 
 
@@ -46,6 +50,7 @@ class MateSuggestion:
     reasons: list[str]
     signal_pins: int = 0    # shared pin numbers that carry a signal on both sides
     ambiguous: bool = False  # another pairing of one of these connectors scores (almost) the same
+    overlap: float = 0.0     # shared pin numbers / all pin numbers (Jaccard)
 
     @property
     def auto(self) -> bool:
@@ -69,6 +74,15 @@ def _family(part: str) -> tuple[str, str] | None:
     return None
 
 
+def _gender_pair(a: str, b: str) -> bool:
+    """Part numbers that differ only in one F/M (female/male) letter: ADF6-60-.. / ADM6-60-.."""
+    a, b = (a or "").upper(), (b or "").upper()
+    if len(a) != len(b) or len(a) < 4:
+        return False
+    diff = [(x, y) for x, y in zip(a, b) if x != y]
+    return len(diff) == 1 and set(diff[0]) == {"F", "M"}
+
+
 def _live(board: Board, net: str) -> bool:
     return bool(net) and (not net.startswith("N$") or len(board.nets.get(net, [])) >= 2)
 
@@ -85,6 +99,9 @@ def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
         else:
             score += 0.15
             reasons.append(f"aynı konektör ailesi ({fa[0]})")
+    elif _gender_pair(ca.part, cb.part):
+        score += 0.25
+        reasons.append(f"dişi/erkek eş parça olabilir ({ca.part} ↔ {cb.part})")
     elif ca.part and ca.part == cb.part:
         score += 0.1
         reasons.append(f"aynı parça numarası ({ca.part})")
@@ -130,7 +147,7 @@ def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
         reasons.append(f"güç/toprak deseni: {pwr_match}/{pwr_total}")
     if sig_pins < MIN_AUTO_SIGNALS:
         reasons.append(f"yalnızca {sig_pins} ortak sinyal pini: otomatik uygulanmaz (RF/kablo konnektörü olabilir)")
-    return MateSuggestion(Mate(ba.name, ra, bb.name, rb), round(score, 3), reasons, sig_pins)
+    return MateSuggestion(Mate(ba.name, ra, bb.name, rb), round(score, 3), reasons, sig_pins, overlap=jacc)
 
 
 def suggest_mates(boards: dict[str, Board], threshold: float = 0.35) -> list[MateSuggestion]:
@@ -144,7 +161,7 @@ def suggest_mates(boards: dict[str, Board], threshold: float = 0.35) -> list[Mat
             for ra in ca:
                 for rb in cb:
                     s = score_pair(ba, ra, bb, rb)
-                    if s.score >= threshold:
+                    if s.score >= threshold or (s.overlap >= SHOW_OVERLAP and s.signal_pins >= MIN_AUTO_SIGNALS):
                         cands.append(s)
     cands.sort(key=lambda s: -s.score)
     # identical connectors (KN2/KN3/KN4, same part, same pins) with no signal-name evidence score the
