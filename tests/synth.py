@@ -33,7 +33,7 @@ class Sheet:
 
     def symbol(self, x: float, y: float, ref: str, part: str, left=(), right=(), bank: str | None = None,
                width: float = 90, wire: float = 70, flags: bool = False,
-               pitch: float = PITCH, mid_numbers: bool = False):
+               pitch: float = PITCH, mid_numbers: bool = False, beside: bool = False):
         """Body at (x, y). left/right: [(pin number, pin name, net label or None)].
 
         Pins with a net label get a wire ending in that label; returns {pin number: wire end point}.
@@ -56,7 +56,9 @@ class Sheet:
                     self.line(x_out, py, x, py)
                     self.text(x - STUB + 2, ny, num)
                     self.text(x + 3, py + 2.5, name)
-                    if net and flags:   # off-page flag "<<" at the wire end, name beyond it
+                    if net and beside:  # no wire: name printed beyond the stub end
+                        self.text(x_out - 7 - 3.9 * len(net), py + 2.5, net)
+                    elif net and flags:   # off-page flag "<<" at the wire end, name beyond it
                         self.line(x_out - wire, py, x_out, py)
                         self.flag(x_out - wire, py, -1)
                         self.text(x_out - wire - 12 - 3.9 * len(net), py + 2.5, net)
@@ -69,7 +71,9 @@ class Sheet:
                     self.line(x + width, py, x_out, py)
                     self.text(x + width + 2, ny, num)
                     self.text(x + width - 3 - 3.6 * len(name), py + 2.5, name)
-                    if net and flags:
+                    if net and beside:
+                        self.text(x_out + 7, py + 2.5, net)
+                    elif net and flags:
                         self.line(x_out, py, x_out + wire, py)
                         self.flag(x_out + wire, py, 1)
                         self.text(x_out + wire + 12, py + 2.5, net)
@@ -244,4 +248,47 @@ def ghost_adc_board(path: str):
     s.symbol(520, 80, "KN1", "MJ-0000-39366", flags=True, left=[
         ("H7", "LA02_P", "APOLLO_GPIO17_FMC"), ("H8", "LA02_N", "APOLLO_GPIO18_FMC"),
         ("H1", "GND", "GND")])
+    s.save(path)
+
+
+class LooseLineSheet(Sheet):
+    """Symbol bodies drawn as four separate open strokes (not a rectangle path)."""
+
+    def rect(self, x0, y0, x1, y1):
+        for a, b, c, d in ((x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0)):
+            self.page.draw_line((a, b), (c, d), width=0.8)
+
+
+N_SIG = 10
+
+
+def som_board(path: str):
+    """FPGA SOM: TD1 wired by labels to a generic 60-pin connector KN1 (pin name == pin number)."""
+    s = LooseLineSheet(height=842)
+    s.symbol(560, 60, "TD1", "XCZU17EG-2FFVC1760I", left=[
+        (f"A{k + 10}", f"IO_L{k + 1}P_T0U_N0_DBC_66", f"B66_L{k + 1}_P") for k in range(N_SIG)])
+    pins = [(f"A{k + 1}", f"A{k + 1}", f"B66_L{k + 1}_P") for k in range(N_SIG)] + [("A30", "A30", "GND")]
+    s.symbol(200, 60, "KN1", "MJ-0000-38989", right=pins)
+    s.save(path)
+
+
+def main_board(path: str):
+    """Main board: connector pins have no wires; the net name is printed beside each pin end."""
+    s = LooseLineSheet(height=842)
+    kn2 = [(f"A{k + 1}", f"A{k + 1}", f"RF_GPIO_{k}") for k in range(N_SIG)] + [("A30", "A30", "GND")]
+    s.symbol(120, 60, "KN2", "MJ-0000-38989", right=kn2, beside=True)
+    kn5 = [(f"H{k + 4}", f"LA{k:02d}_P", f"RF_GPIO_{k}") for k in range(N_SIG)] + [("H1", "GND", "GND")]
+    s.symbol(600, 60, "KN5", "ASP-184329-01", left=kn5, beside=True)
+    s.symbol(330, 300, "TD5", "LS1046AXN8T1A", left=[("B2", "IIC1_SDA", "I2C1_SDA"), ("B3", "IIC1_SCL", "I2C1_SCL"),
+                                                      ("B4", "GPIO1_01", "CPU_GPIO1")], beside=True)
+    s.save(path)
+
+
+def rf_board(path: str):
+    """RF card: AFE wired by labels to the FMC+ mezzanine connector KN21."""
+    s = LooseLineSheet(height=842)
+    s.symbol(150, 60, "TD2", "AFE7900IABJ", right=[
+        (f"G{k + 1}", f"GPIO{k}", f"AFE_GPIO{k}") for k in range(N_SIG)])
+    kn21 = [(f"H{k + 4}", f"LA{k:02d}_P", f"AFE_GPIO{k}") for k in range(N_SIG)] + [("H1", "GND", "GND")]
+    s.symbol(560, 60, "KN21", "ASP-188588-01", left=kn21)
     s.save(path)

@@ -44,12 +44,13 @@ class MateSuggestion:
     mate: Mate
     score: float
     reasons: list[str]
-    signal_pins: int = 0    # shared pin numbers that are signals on both sides
+    signal_pins: int = 0    # shared pin numbers that carry a signal on both sides
+    ambiguous: bool = False  # another pairing of one of these connectors scores (almost) the same
 
     @property
     def auto(self) -> bool:
-        """Strong enough to apply without asking."""
-        return self.score >= AUTO_MATE_SCORE and self.signal_pins >= MIN_AUTO_SIGNALS
+        """Strong enough, and unambiguous enough, to apply without asking."""
+        return self.score >= AUTO_MATE_SCORE and self.signal_pins >= MIN_AUTO_SIGNALS and not self.ambiguous
 
 
 def norm_signal(name: str) -> str:
@@ -66,6 +67,10 @@ def _family(part: str) -> tuple[str, str] | None:
         if any(k in p for k in side_b):
             return fam, "b"
     return None
+
+
+def _live(board: Board, net: str) -> bool:
+    return bool(net) and (not net.startswith("N$") or len(board.nets.get(net, [])) >= 2)
 
 
 def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
@@ -101,11 +106,16 @@ def score_pair(ba: Board, ra: str, bb: Board, rb: str) -> MateSuggestion:
             pwr_total += 1
             pwr_match += a_pwr == b_pwr
             continue
-        sig_pins += 1
-        names_a = {norm_signal(x) for x in (a.net, a.name) if x and not x.startswith("N$")}
+        # a signal pin counts only when it carries something on both sides: a named net, or a
+        # net that reaches another pin (a dead-end stub is no evidence of a mate)
+        if _live(ba, a.net) and _live(bb, b.net):
+            sig_pins += 1
+        names_a ={norm_signal(x) for x in (a.net, a.name) if x and not x.startswith("N$")}
         names_b = {norm_signal(x) for x in (b.net, b.name) if x and not x.startswith("N$")}
-        names_a.discard("")
-        names_b.discard("")
+        # a pin "named" by its own number (A14 / A14 on generic connector symbols) proves nothing
+        for names in (names_a, names_b):
+            names.discard("")
+            names.discard(norm_signal(n))
         if not names_a or not names_b:
             continue
         sig_total += 1
@@ -137,11 +147,25 @@ def suggest_mates(boards: dict[str, Board], threshold: float = 0.35) -> list[Mat
                     if s.score >= threshold:
                         cands.append(s)
     cands.sort(key=lambda s: -s.score)
+    # identical connectors (KN2/KN3/KN4, same part, same pins) with no signal-name evidence score the
+    # same against every partner: picking one would be a coin toss, so flag it for the user
+    for s in cands:
+        ends = {(s.mate.board_a, s.mate.ref_a), (s.mate.board_b, s.mate.ref_b)}
+        for o in cands:
+            if o is s or abs(o.score - s.score) > 0.02:
+                continue
+            if ends & {(o.mate.board_a, o.mate.ref_a), (o.mate.board_b, o.mate.ref_b)}:
+                if not s.ambiguous:
+                    s.reasons.append("belirsiz: aynı puanı alan başka bir eşleşme de var, elle seçin")
+                s.ambiguous = True
+                break
     used: set[tuple[str, str]] = set()
     out = []
     for s in cands:
         ka, kb = (s.mate.board_a, s.mate.ref_a), (s.mate.board_b, s.mate.ref_b)
         if ka in used or kb in used:
+            if s.ambiguous:
+                out.append(s)       # keep every equally good option visible in the dialog
             continue
         used.update((ka, kb))
         out.append(s)

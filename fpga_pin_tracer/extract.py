@@ -131,12 +131,12 @@ def _split_span(chars: list[dict], ddx: float, ddy: float, size: float) -> list[
     return out
 
 
-def _rects_from_segs(segs: list[Seg]) -> tuple[list[Box], set[int]]:
+def _rects_from_segs(segs: list[Seg]) -> list[tuple[Box, set[int]]]:
     """Find rectangles drawn as four separate strokes (Cadence/Allegro symbol bodies).
 
     Collinear touching strokes are merged first (an edge may be broken where pins meet it), then
     a rectangle is a top edge whose two ends start vertical edges of equal length that are closed
-    by a bottom edge. Returns the boxes and the indices of the strokes that form their edges.
+    by a bottom edge. Returns each box with the indices of the strokes that form its edges.
     """
     tol = 0.3
 
@@ -172,7 +172,7 @@ def _rects_from_segs(segs: list[Seg]) -> tuple[list[Box], set[int]]:
                     yield k
 
     boxes: list[Box] = []
-    used: set[int] = set()
+    out: list[tuple[Box, set[int]]] = []
     for y, x0, x1, hidx in hs:
         if x1 - x0 < 3:
             continue
@@ -188,9 +188,29 @@ def _rects_from_segs(segs: list[Seg]) -> tuple[list[Box], set[int]]:
                            and abs(hs[k][2] - x1) <= tol]
                 if not bottoms:
                     continue
-                boxes.append(Box(x0, y, x1, yb))
-                used.update(hidx, vs[lk][3], vs[rk][3], hs[bottoms[0]][3])
-    return boxes, used
+                out.append((Box(x0, y, x1, yb), set(hidx) | set(vs[lk][3]) | set(vs[rk][3])
+                            | set(hs[bottoms[0]][3])))
+    return out
+
+
+def _stub_count(box: Box, segs: list[Seg], edges: set[int], ts: float) -> int:
+    """Strokes perpendicular to a box edge, ending on it and leaving outward (pin stubs)."""
+    tol = max(0.5, 0.12 * ts)
+    n = 0
+    for i, s in enumerate(segs):
+        if i in edges:
+            continue
+        if s.horizontal:
+            if not (box.y0 + tol < s.y0 < box.y1 - tol):
+                continue
+            if (abs(s.x1 - box.x0) <= tol and s.x0 < box.x0 - tol) or (abs(s.x0 - box.x1) <= tol and s.x1 > box.x1 + tol):
+                n += 1
+        else:
+            if not (box.x0 + tol < s.x0 < box.x1 - tol):
+                continue
+            if (abs(s.y1 - box.y0) <= tol and s.y0 < box.y0 - tol) or (abs(s.y0 - box.y1) <= tol and s.y1 > box.y1 + tol):
+                n += 1
+    return n
 
 
 def extract_page(page: pymupdf.Page) -> PagePrims:
@@ -330,13 +350,23 @@ def extract_page(page: pymupdf.Page) -> PagePrims:
         graphics = [g for g in graphics if not in_text(g.x0, g.y0, g.x1, g.y1)]
         rects = [r for r in rects if not in_text(r.x0, r.y0, r.x1, r.y1)]
 
-    seg_boxes, edge_idx = _rects_from_segs(segs) if cadence else ([], set())
-    if seg_boxes:
-        rects.extend(seg_boxes)
-        segs = [s for i, s in enumerate(segs) if i not in edge_idx]
-
     sizes = sorted(t.size for t in texts if not t.hidden)
     text_size = sizes[len(sizes) // 2] if sizes else 6.0
+
+    # symbol bodies drawn as four loose strokes: always on Cadence pages; elsewhere only boxes big
+    # enough for a symbol with pin stubs leaving their edges (not resistor boxes or group frames)
+    edge_idx: set[int] = set()
+    page_area = page.rect.width * page.rect.height
+    for box, edges in _rects_from_segs(segs):
+        if not cadence:
+            if box.w < 3 * text_size or box.h < 3 * text_size or box.w * box.h > 0.25 * page_area:
+                continue
+            if _stub_count(box, segs, edges, text_size) < 3:
+                continue
+        rects.append(box)
+        edge_idx |= edges
+    if edge_idx:
+        segs = [s for i, s in enumerate(segs) if i not in edge_idx]
     for i, s in enumerate(segs):
         s.idx = i
     return PagePrims(page.number + 1, page.rect.width, page.rect.height, texts, segs, rects,

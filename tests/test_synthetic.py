@@ -186,3 +186,62 @@ def test_small_connector_pairs_are_only_suggested():
     by = {(s.mate.ref_a, s.mate.ref_b): s for s in suggest_mates({"A": a, "B": b}, threshold=0.3)}
     assert by[("KN5", "KN1")].auto
     assert ("KN20", "KN30") in by and not by[("KN20", "KN30")].auto
+
+
+def test_three_boards_like_som_mainboard_rf(tmp_path):
+    """SOM + main board + RF card: loose-line bodies, connector pins without wires (name beside
+    the pin end), generic connectors whose pin names equal their numbers, auto-mate only."""
+    paths = {n: str(tmp_path / f"{n}.pdf") for n in ("SOM", "MAIN", "RF")}
+    synth.som_board(paths["SOM"])
+    synth.main_board(paths["MAIN"])
+    synth.rf_board(paths["RF"])
+    d = Design()
+    for n, p in paths.items():
+        d.add_board(parse_pdf(p, name=n))
+    main = d.boards["MAIN"]
+    assert main.components["KN2"].pins["A1"].net == "RF_GPIO_0"
+    assert main.components["KN5"].pins["H4"].net == "RF_GPIO_0"
+    assert "TD5" in main.components and len(main.components["TD5"].pins) == 3
+    sugg = suggest_mates(d.boards, threshold=0.3)
+    key = lambda s: frozenset([(s.mate.board_a, s.mate.ref_a), (s.mate.board_b, s.mate.ref_b)])  # noqa: E731
+    by = {key(s): s for s in sugg}
+    fmc = by[frozenset([("MAIN", "KN5"), ("RF", "KN21")])]
+    assert fmc.auto                                   # FMC+ carrier/mezzanine: part numbers + names
+    gen = by[frozenset([("SOM", "KN1"), ("MAIN", "KN2")])]
+    assert not gen.auto                               # generic 60-pin, different net names: suggest
+    d.mates += [fmc.mate, gen.mate]                   # the user ticks the suggestion
+    res = {r.start.pin_name: r for r in d.trace_component("RF", "TD2")}
+    assert len(res) == synth.N_SIG
+    for k in range(synth.N_SIG):
+        assert res[f"GPIO{k}"].end.pin == f"A{k + 10}"
+        assert res[f"GPIO{k}"].end.board == "SOM"
+
+
+def test_pin_number_as_name_is_no_evidence():
+    from fpga_pin_tracer.model import Board
+    a, b = Board("A"), Board("B")
+    a.components["KN1"] = _conn("KN1", "X-60", [(f"A{i}", f"A{i}", f"N$a{i}") for i in range(1, 21)])
+    b.components["KN2"] = _conn("KN2", "X-60", [(f"A{i}", f"A{i}", f"N$b{i}") for i in range(1, 21)])
+    for brd in (a, b):
+        brd.rebuild_nets()
+    s = score_pair_for(a, "KN1", b, "KN2")
+    assert not any("sinyal adı eşleşmesi" in r for r in s.reasons)
+    assert not s.auto        # dead-end pins are not shared signals
+
+
+def score_pair_for(a, ra, b, rb):
+    from fpga_pin_tracer.mating import score_pair
+    return score_pair(a, ra, b, rb)
+
+
+def test_identical_connectors_are_ambiguous():
+    """Two identical 60-pin connectors per board and no name evidence: never auto, all shown."""
+    from fpga_pin_tracer.model import Board
+    a, b = Board("A"), Board("B")
+    for brd, refs, pre in ((a, ("KN1", "KN3"), "SOM"), (b, ("KN2", "KN4"), "MAIN")):
+        for r in refs:
+            brd.components[r] = _conn(r, "MJ-0000-38989",
+                                      [(f"A{i}", f"A{i}", f"{pre}_{r}_{i}") for i in range(1, 21)] + [("A30", "A30", "GND")])
+        brd.rebuild_nets()
+    sugg = suggest_mates({"A": a, "B": b}, threshold=0.3)
+    assert len(sugg) == 4 and all(s.ambiguous and not s.auto for s in sugg)

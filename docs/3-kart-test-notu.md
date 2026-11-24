@@ -4,6 +4,35 @@ Bu not, projeyi ana kart şemasıyla birlikte test edecek kişi veya yapay zeka 
 FPGA kartı ⇄ ana kart ⇄ Apollo kartı zincirinde uygulamanın bağlantıları doğru ve eksiksiz bulup
 bulmadığını ölçmek ve geri bildirimi, geliştirmeye devam edecek tarafın anlayacağı biçimde getirmek.
 
+## Önce sürümü kontrol edin
+
+Bu not kodun tamamıyla birlikte geçerlidir; yalnızca `README.md` ve `docs/` yetmez. Test etmeden önce
+repo güncel olmalı:
+
+```powershell
+git pull
+git log --oneline -1
+```
+
+`tools/trace_report.py` dosyası yoksa veya `fpga_pin_tracer/mating.py` içinde `MIN_AUTO_SIGNALS`
+geçmiyorsa kod eskidir; sonuçlar bu notla karşılaştırılamaz.
+
+## İlk geri bildirimden sonra yapılanlar
+
+İlk test (KD-0000-0193 SOM, AD-0000-3107 ana kart, AD-0000-2444 RF kartı) eski bir kodla yapıldı,
+ama şu gerçek sorunları gösterdi; hepsi düzeltildi ve her biri için `tests/` altında bu kartları taklit
+eden bir test var (`test_three_boards_like_som_mainboard_rf` ve diğerleri):
+
+- Konnektör pininde tel yoksa ve sinyal adı pin ucunun birkaç punto ötesine yazılmışsa, bu ad artık o
+  pinin net adı olarak alınıyor (`PageParser.pin_end_labels`).
+- Pin adı pin numarasıyla aynı olan genel konnektörlerde (A14 / A14) bu "ad" artık sinyal adı eşleşmesi
+  sayılmıyor; ortak sinyal pini sayısına yalnızca iki tarafta da bir yere bağlanan pinler giriyor.
+- Gövdesi dört ayrı çizgiyle çizilmiş büyük semboller (LS1046 gibi) artık her sayfada bulunuyor
+  (yeterince büyük ve kenarlarından pin çıkan kutular).
+- Aynı tipte birden çok konnektör varsa (ana karttaki KN2/KN3/KN4 gibi) ve sinyal adları eşleşmiyorsa,
+  eşit puanlı eşleşmeler "belirsiz" işaretlenir ve otomatik uygulanmaz. Bu konnektörler **elle
+  eşleştirilmelidir** (uygulamada Konnektör eşleştirme penceresi, raporda `--mate`).
+
 ## Uygulama ne yapıyor (kısaca)
 
 PCB şematik PDF'lerinden, seçilen entegrenin her pininin FPGA'nın hangi pinine ve bankasına
@@ -60,7 +89,7 @@ Windows'ta proje klasöründe `run.bat` bir kez çalıştırılınca `.venv` kur
 .venv\Scripts\python -m pytest -q
 ```
 
-12 testin hepsi geçmeli.
+Testlerin hepsi geçmeli (şu an 15).
 
 ## Test adımları
 
@@ -133,4 +162,8 @@ Kodda bir hata bulunup düzeltme önerilecekse değişikliği doğrudan yapmak y
 - SYSREF gibi bazı sinyaller FPGA'ya değil saat entegresine (HMC7044) gider; `STOP` olmaları doğaldır.
 - 8'den az ortak sinyal pini olan konnektör çiftleri (RF konnektörler gibi) otomatik eşleşmez,
   yalnızca önerilir.
+- Kartlar arasında net adları farklı olan genel konnektörler (iki kartta farklı adlandırılmış aynı
+  sinyal, şirket içi parça numarası) düşük puan alır ve yalnızca önerilir; hangi konnektörün hangisine
+  takıldığını kullanıcı bilir, `--mate` ile verilmelidir. Örnek:
+  `--mate KD-0000-0193_130_AA:KN2=AD-0000-3107_130_P11:KN2`.
 - Bank gerilimi sütunu voltaj değil, bankı besleyen netin adıdır.

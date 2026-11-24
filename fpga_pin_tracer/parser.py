@@ -415,6 +415,44 @@ class PageParser:
                 t.used = True
         return out
 
+    def pin_end_labels(self, pins: list[_PinRec], grid: Grid, exclude: set[int],
+                       labels: dict[int, list[str]]) -> None:
+        """Net names printed just beyond a pin's free end, with no wire or flag in between.
+
+        Some sheets (connector/port pages) express connectivity only this way: the pin stub stops
+        and the signal name follows a few points further out on the same line.
+        """
+        ts, tol, segs = self.ts, self.tol, self.pp.segs
+        for p in pins:
+            s = p.seg
+            if labels.get(s.idx):
+                continue
+            ox, oy = p.outer
+            if any(oi != s.idx and oi not in exclude and _on_segment(ox, oy, segs[oi], tol)
+                   for oi in grid.near(ox - tol, oy - tol, ox + tol, oy + tol)):
+                continue    # a wire continues from the pin: ordinary labels apply
+            outward = (1 if ox > s.x0 + tol else -1) if s.horizontal else (1 if oy > s.y0 + tol else -1)
+            best = None
+            for t in self.visible:
+                if t.used or not NET_RE.match(t.text) or not re.search(r"[A-Za-z]", t.text) \
+                        or VALUE_RE.match(t.text) or PASSIVE_RE.match(t.text):
+                    continue
+                if s.horizontal:
+                    if not t.horizontal or abs(t.cy - oy) > 0.6 * ts:
+                        continue
+                    gap = (t.x0 - ox) if outward > 0 else (ox - t.x1)
+                else:
+                    if t.horizontal or abs(t.cx - ox) > 0.6 * ts:
+                        continue
+                    gap = (t.y0 - oy) if outward > 0 else (oy - t.y1)
+                if not (-0.3 * ts <= gap <= 2.5 * ts):
+                    continue
+                if best is None or gap < best[0]:
+                    best = (gap, t)
+            if best:
+                labels.setdefault(s.idx, []).append(best[1].text)
+                best[1].used = True
+
     # ---------------------------------------------------------------- refdes / part
     def assign_refdes(self, bodies: list[Box]) -> tuple[dict[int, str], dict[int, str], dict[int, str]]:
         ts = self.ts
@@ -525,6 +563,7 @@ def parse_pdf(path: str, name: str | None = None, progress=None, use_markers: bo
         uf = P.group_wires(grid, plate_ex)
         P.values = _passive_values(P)      # consume values before they can pass for net labels
         labels = P.find_labels(grid, plate_ex)
+        P.pin_end_labels(pins, grid, plate_ex, labels)    # before refdes: these names are not parts
         refs, parts, banks = P.assign_refdes(bodies)
 
         def gkey(si: int) -> str:
